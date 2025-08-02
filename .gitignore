@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+sns-exports/
+.serena/cache/
+.claude/
+.vite/
+dist/index.html
+dist/assets/
+
+dist/images/
