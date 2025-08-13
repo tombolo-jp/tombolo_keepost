@@ -4,6 +4,7 @@
   import KeepFilterCheckbox from '../filter/KeepFilterCheckbox.svelte'
   import Loading from '../common/Loading.svelte'
   import ErrorMessage from '../common/ErrorMessage.svelte'
+  import KeePostFeatures from '../common/KeePostFeatures.svelte'
   import { onMount } from 'svelte'
   import { with_base_path } from '../../utils/base_path.js'
 
@@ -149,13 +150,21 @@
   {#if is_initializing}
     <Loading message="読み込み中..." />
   {:else if total_posts === 0}
-    <div class="empty-state">
-      <div class="empty-icon">📁</div>
-      <h2>まだポストがありません</h2>
-      <p>SNSのエクスポートデータをインポートすると、ポストを閲覧・管理できます。</p>
-      <a href="{with_base_path('import')}" class="import-button">
-        データをインポート
-      </a>
+    <div class="empty-state-container">
+      <div class="empty-state-content">
+        <div class="empty-state">
+          <div class="empty-icon">📁</div>
+          <h2>まだポストがありません</h2>
+          <a href="{with_base_path('import')}" class="import-button">
+            データをインポート
+          </a>
+          <p>SNSデータをインポートすると、ポストを閲覧・管理できます。</p>
+          <img src="./images/screenshot.png" alt="">
+        </div>
+        <div class="features-section">
+          <KeePostFeatures />
+        </div>
+      </div>
     </div>
   {:else}
     <div class="posts-section">
@@ -230,30 +239,56 @@
   .posts-page {
   }
 
+  .empty-state-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  .empty-state-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+
   .empty-state {
-    max-width: 600px;
-    margin: 4rem auto;
-    padding: 3rem;
+    padding: 2rem;
     text-align: center;
     background: white;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
 
+  .empty-state img {
+    display: block;
+    margin-top: 1rem;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e5e7eb;
+  }
+
+  .features-section {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
   .empty-icon {
-    font-size: 4rem;
-    margin-bottom: 1.5rem;
+    font-size: 3rem;
+    margin-bottom: 1rem;
     opacity: 0.8;
+    line-height: 1;
   }
 
   .empty-state h2 {
     margin: 0 0 1rem 0;
     color: #1f2937;
-    font-size: 1.75rem;
+    font-size: 1.4rem;
   }
 
   .empty-state p {
-    margin: 0 0 2rem 0;
+    margin-top: 2rem;
     color: #6b7280;
     line-height: 1.6;
   }
@@ -338,8 +373,16 @@
 
   /* レスポンシブ対応 */
   @media (max-width: 768px) {
-    .empty-state {
-      margin: 2rem 1rem;
+    .empty-state-container {
+      padding: 1rem;
+    }
+
+    .empty-state-content {
+      grid-template-columns: 1fr;
+    }
+
+    .empty-state,
+    .features-section {
       padding: 2rem 1.5rem;
     }
 

@@ -1,4 +1,5 @@
 <script>
+  import KeePostFeatures from '../common/KeePostFeatures.svelte'
   export let selected_sns = ''
 
   // SNS別ガイド情報
@@ -50,24 +51,7 @@
 <div class="import-guide">
   {#if !current_guide}
     <!-- SNS未選択時の表示 -->
-    <div class="guide-section">
-      <h3 class="guide-title">
-        <i class="guide-icon fas fa-lock"></i>
-        KeePostの特長
-      </h3>
-      <div class="guide-content">
-        <p class="guide-text">
-          KeePostは、プライバシーとポータビリティに配慮したアプリです。
-        </p>
-        <ul class="guide-list">
-          <li>すべてのデータはブラウザ内で処理されます</li>
-          <li>データはブラウザ内に保存されます (IndexedDB, localStorage)</li>
-          <li>サーバーへの送信は一切ありません</li>
-          <li>データをご自身でバックアップ可能です</li>
-          <li>オープンソース化を予定しています (2025年9月予定)</li>
-        </ul>
-      </div>
-    </div>
+    <KeePostFeatures />
   {:else}
     <!-- SNS選択時の表示 -->
     <div class="guide-section">

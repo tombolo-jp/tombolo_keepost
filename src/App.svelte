@@ -71,10 +71,9 @@
       debug_log('App.svelte: filter_state:', filter_state)
       const current_total_posts = filter_state.stats?.total_posts || 0
 
-      // ポストがない場合はインポートページへ
-      if (current_total_posts === 0 && router.get_page_from_url() === 'posts') {
-        router.navigate('import')
-      } else if (active_tab) {
+      // ポストがない場合でも、インポートページへは自動転送しない
+      // ユーザーが明示的にインポートボタンをクリックした場合のみ移動
+      if (active_tab) {
         await post_store.load_posts(1)
       }
     } catch (error) {
