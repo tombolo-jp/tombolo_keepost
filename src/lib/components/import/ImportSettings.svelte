@@ -3,6 +3,9 @@
   import { storage_service } from '../../services/storage_service.js'
   import { post_repository } from '../../repositories/post_repository.js'
   import { ui_store } from '../../stores/ui_store.js'
+  import { export_service } from '../../services/export_service.js'
+  import { import_service } from '../../services/import_service.js'
+  import Swal from 'sweetalert2'
 
   let storage_info = null
   let import_history = []
@@ -69,12 +72,158 @@
   function cancel_clear() {
     show_clear_confirm = false
   }
+
+  async function handle_export() {
+    try {
+      const result = await Swal.fire({
+        title: 'データをエクスポート',
+        text: 'すべてのデータをバックアップファイルとしてエクスポートします',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonText: 'エクスポート開始',
+        cancelButtonText: 'キャンセル',
+        confirmButtonColor: '#4a5568'
+      })
+
+      if (!result.isConfirmed) return
+
+      await Swal.fire({
+        title: 'エクスポート中...',
+        html: '<div id="export-progress">準備中...</div>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: async () => {
+          Swal.showLoading()
+
+          try {
+            await export_service.export_all_data((progress_info) => {
+              const el = document.getElementById('export-progress')
+              if (el) {
+                el.textContent = progress_info.message || '処理中...'
+              }
+            })
+
+            await Swal.fire({
+              title: '完了',
+              text: 'バックアップファイルをダウンロードしました',
+              icon: 'success',
+              confirmButtonColor: '#4a5568'
+            })
+          } catch (error) {
+            await Swal.fire({
+              title: 'エラー',
+              text: error.message || 'エクスポートに失敗しました',
+              icon: 'error',
+              confirmButtonColor: '#4a5568'
+            })
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Export error:', error)
+    }
+  }
+
+  async function handle_import() {
+    try {
+      const { value: file } = await Swal.fire({
+        title: 'バックアップファイルを選択',
+        input: 'file',
+        inputAttributes: {
+          accept: '.ndjson.gz,.ndjson,.gz',
+          'aria-label': 'バックアップファイルを選択'
+        },
+        showCancelButton: true,
+        confirmButtonText: '次へ',
+        cancelButtonText: 'キャンセル',
+        confirmButtonColor: '#4a5568'
+      })
+
+      if (!file) return
+
+      const result = await Swal.fire({
+        title: '確認',
+        html: '既存のデータは<strong>すべて削除</strong>されます。<br>この操作は取り消せません。',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'インポート開始',
+        cancelButtonText: 'キャンセル',
+        confirmButtonColor: '#e53e3e'
+      })
+
+      if (!result.isConfirmed) return
+
+      await Swal.fire({
+        title: 'インポート中...',
+        html: '<div id="import-progress">準備中...</div>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: async () => {
+          Swal.showLoading()
+
+          try {
+            const import_result = await import_service.import_with_auto_detect(file, (progress_info) => {
+              const el = document.getElementById('import-progress')
+              if (el) {
+                el.textContent = progress_info.message || '処理中...'
+              }
+            })
+
+            await Swal.fire({
+              title: '完了',
+              text: import_result.message || 'データの復元が完了しました',
+              icon: 'success',
+              confirmButtonColor: '#4a5568'
+            })
+
+            await load_data()
+          } catch (error) {
+            await Swal.fire({
+              title: 'エラー',
+              text: error.message || 'インポートに失敗しました',
+              icon: 'error',
+              confirmButtonColor: '#4a5568'
+            })
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Import error:', error)
+    }
+  }
 </script>
 
 <div class="import-settings">
   {#if is_loading}
     <div class="loading">読み込み中...</div>
   {:else}
+
+    <div class="backup-section">
+      <h4>KeePostデータをエクスポート / インポート</h4>
+      <div class="backup-buttons">
+        <button
+          class="button primary"
+          on:click={handle_export}
+        >
+          <i class="fas fa-upload"></i>
+          全データをエクスポート
+        </button>
+        <button
+          class="button primary"
+          on:click={handle_import}
+        >
+          <i class="fas fa-download"></i>
+          全データをインポートして復元
+        </button>
+      </div>
+      <p class="backup-note">
+        エクスポート: すべてのデータをバックアップファイルとして保存<br>
+        インポート: バックアップファイルからデータを復元（既存データは削除されます）
+      </p>
+    </div>
+
     <div class="storage-info">
       <h4>ストレージ使用状況</h4>
       {#if storage_info}
@@ -169,6 +318,7 @@
 
   .storage-info,
   .import-history,
+  .backup-section,
   .danger-zone {
     background: white;
     border: 1px solid #e2e8f0;
@@ -274,6 +424,35 @@
 
   .button.danger:hover {
     background-color: #c53030;
+  }
+
+  .button.primary {
+    background-color: #3182ce;
+  }
+
+  .button.primary:hover {
+    background-color: #2c5282;
+  }
+
+  .backup-section {
+    background-color: #f7fafc;
+  }
+
+  .backup-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .backup-note {
+    font-size: 0.875rem;
+    color: #718096;
+    margin: 1rem 0 0;
+    line-height: 1.5;
+  }
+
+  .button i {
+    margin-right: 0.5rem;
   }
 
   .confirm-dialog {

@@ -1,0 +1,51 @@
+# KeePost SPA Routing Configuration
+# このファイルは、SPAルーティングを適切に処理するためのApache設定です
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /keepost/
+  
+  # 実在するファイル・ディレクトリはそのまま提供
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  
+  # API等の除外パス（必要に応じて追加）
+  # RewriteCond %{REQUEST_URI} !^/keepost/api
+  
+  # すべてのリクエストをindex.htmlにリライト
+  # L (Last) フラグで、このルール以降は処理しない
+  RewriteRule ^.*$ /keepost/index.html [L]
+</IfModule>
+
+# キャッシュコントロール（オプション）
+<IfModule mod_headers.c>
+  # HTML ファイルはキャッシュしない（常に最新版を取得）
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+  </FilesMatch>
+  
+  # JS/CSS/画像ファイルは長期キャッシュ
+  <FilesMatch "\.(js|css|jpg|jpeg|png|gif|svg|ico|woff|woff2|ttf|eot)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# MIME タイプの設定
+<IfModule mod_mime.c>
+  AddType application/javascript .js
+  AddType text/css .css
+  AddType image/svg+xml .svg
+  AddType application/font-woff2 .woff2
+  AddType application/font-woff .woff
+</IfModule>
+
+# gzip 圧縮（パフォーマンス向上）
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html
+  AddOutputFilterByType DEFLATE text/css
+  AddOutputFilterByType DEFLATE application/javascript
+  AddOutputFilterByType DEFLATE application/json
+  AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>

@@ -53,7 +53,7 @@
     <div class="guide-section">
       <h3 class="guide-title">
         <i class="guide-icon fas fa-lock"></i>
-        プライバシー保護
+        KeePostの特長
       </h3>
       <div class="guide-content">
         <p class="guide-text">
@@ -63,7 +63,7 @@
           <li>すべてのデータはブラウザ内で処理されます</li>
           <li>データはブラウザ内に保存されます (IndexedDB, localStorage)</li>
           <li>サーバーへの送信は一切ありません</li>
-          <li>データをご自身でバックアップ可能です (バックアップ機能は近日公開予定)</li>
+          <li>データをご自身でバックアップ可能です</li>
           <li>オープンソース化を予定しています (2025年9月予定)</li>
         </ul>
       </div>

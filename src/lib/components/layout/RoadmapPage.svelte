@@ -77,16 +77,6 @@
         <ul class="feature-list">
             <li class="feature-item">
                 <div class="feature-title">
-                    KeePostデータのJSONエクスポート/インポート機能
-                    <span class="status-badge status-development">開発中</span>
-                </div>
-                <div class="feature-description">
-                    すべてのポストデータとKEEPデータを、JSON形式でエクスポート・インポートできる機能です。バックアップに利用できます。
-                </div>
-            </li>
-
-            <li class="feature-item">
-                <div class="feature-title">
                     Twilogインポート機能
                     <span class="status-badge status-planned">計画中</span>
                 </div>

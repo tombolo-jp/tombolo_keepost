@@ -30,6 +30,17 @@
     // ルーターを初期化
     const cleanup_router = router.initialize()
     
+    // 無効なルートへのアクセスを検出して通知
+    if (!router.is_valid_route()) {
+      const pathname = window.location.pathname
+      debug_log('App.svelte: Invalid route detected:', pathname)
+      ui_store.add_notification({
+        type: 'info',
+        message: 'ページが見つかりません。ホームに戻りました。',
+        duration: 3000
+      })
+    }
+    
     // UI状態を初期化
     ui_store.initialize()
 

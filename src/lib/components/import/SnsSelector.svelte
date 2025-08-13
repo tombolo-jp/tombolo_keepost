@@ -10,8 +10,6 @@
   // サポートされているSNS一覧を取得
   const supported_sns = import_service.get_supported_sns_list()
 
-
-
   function handle_sns_change(event) {
     selected_sns = event.target.value
     dispatch('change', { sns_type: selected_sns })
@@ -24,14 +22,6 @@
       mastodon: '🐘'
     }
     return icons[sns_type] || '📱'
-  }
-
-  function get_file_accept(sns_info) {
-    if (!sns_info) return ''
-
-    return sns_info.supported_formats
-      .map(ext => `.${ext}`)
-      .join(',')
   }
 </script>
 
