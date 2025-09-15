@@ -6,6 +6,10 @@
 <footer class="app-footer">
   <div class="footer-content">
     <div class="footer-nav">
+      <a href="{with_base_path('news')}" class="footer-link">
+        お知らせ
+      </a>
+      <span class="separator">｜</span>
       <a href="{with_base_path('rules')}" class="footer-link">
         利用規約
       </a>

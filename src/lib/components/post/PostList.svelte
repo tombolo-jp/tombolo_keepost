@@ -29,8 +29,42 @@
     }
   }
 
+  // スムーススクロール関数（300ミリ秒）
+  function smooth_scroll_to(element, duration = 300) {
+    const target_position = element.getBoundingClientRect().top + window.pageYOffset
+    const start_position = window.pageYOffset
+    const distance = target_position - start_position
+    let start_time = null
+
+    function animation(current_time) {
+      if (start_time === null) start_time = current_time
+      const time_elapsed = current_time - start_time
+      const progress = Math.min(time_elapsed / duration, 1)
+
+      // easeInOutQuad イージング関数
+      const easing = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2
+
+      window.scrollTo(0, start_position + distance * easing)
+
+      if (progress < 1) {
+        requestAnimationFrame(animation)
+      }
+    }
+
+    requestAnimationFrame(animation)
+  }
+
   // ページ変更イベントを処理して親コンポーネントに伝播
-  function handle_page_change(event) {
+  function handle_page_change(event, from_bottom = false) {
+    // 下部のページネーションからのクリックの場合は上部にスクロール
+    if (from_bottom) {
+      const pagination_top = document.querySelector('.pagination-top')
+      if (pagination_top) {
+        smooth_scroll_to(pagination_top, 500)
+      }
+    }
     // イベントを親コンポーネントに伝播
     dispatch('page-change', event.detail)
   }
@@ -44,7 +78,7 @@
         {total_pages}
         per_page={items_per_page}
         total_count={total_items}
-        on:page-change={handle_page_change}
+        on:page-change={(e) => handle_page_change(e, false)}
       />
     </div>
   {/if}
@@ -83,7 +117,7 @@
         {total_pages}
         per_page={items_per_page}
         total_count={total_items}
-        on:page-change={handle_page_change}
+        on:page-change={(e) => handle_page_change(e, true)}
       />
     </div>
   {/if}
@@ -103,12 +137,6 @@
     padding: 4rem 2rem;
     text-align: center;
     color: #6b7280;
-  }
-
-  .empty-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-    opacity: 0.5;
   }
 
   .empty-state h3 {

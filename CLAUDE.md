@@ -31,8 +31,10 @@ KeePostは、複数のSNS（Twitter、Bluesky、Mastodon）のエクスポート
 
 ### マルチSNSデータインポート
 - **Twitter**: `data/tweets.js`ファイル（JavaScript形式 `window.YTD.tweets.part0 = [...]`）
+- **Twilog**: CSVファイル（Twilogエクスポート形式）
 - **Bluesky**: `.car`ファイル（CARファイル形式）
 - **Mastodon**: `outbox.json`ファイル（ActivityPub形式）
+- **バックアップ**: KeePostバックアップファイル（JSON形式）
 - SNS種別の自動判定とファイル形式別インポート処理
 - プログレス表示とメモリ管理による安定したインポート
 - 利用規約同意チェック機能
@@ -120,12 +122,17 @@ tombolo_keepost/
 │       │   ├── importers/     # SNS別インポーター
 │       │   │   ├── base_importer.js
 │       │   │   ├── twitter_importer.js
+│       │   │   ├── twilog_importer.js
 │       │   │   ├── bluesky_importer.js
-│       │   │   └── mastodon_importer.js
+│       │   │   ├── mastodon_importer.js
+│       │   │   └── backup_importer.js
 │       │   ├── post_service.js
 │       │   ├── search_service.js
 │       │   ├── import_service.js
 │       │   ├── keep_service.js
+│       │   ├── migration_service.js
+│       │   ├── export_service.js
+│       │   ├── terms_service.js
 │       │   ├── router_service.js
 │       │   └── storage_service.js
 │       ├── stores/            # 状態管理（Svelte Store）
@@ -133,12 +140,20 @@ tombolo_keepost/
 │       │   ├── filter_store.js
 │       │   ├── keep_store.js
 │       │   ├── sns_store.js
+│       │   ├── migration_store.js
 │       │   └── ui_store.js
 │       └── utils/             # ユーティリティ
 │           ├── date_utils.js
 │           ├── memory_monitor.js
 │           ├── error_handler.js
-│           └── debug.js
+│           ├── debug.js
+│           ├── debug_helper.js
+│           ├── validation.js
+│           ├── sns_account_validator.js
+│           ├── base_path.js
+│           └── file_utils.js
+├── public/                    # 静的ファイル
+│   └── images/               # 画像ファイル
 ├── css/                       # スタイルシート
 ├── dist/                      # ビルド出力
 ├── index.html                 # HTMLエントリーポイント
@@ -149,7 +164,7 @@ tombolo_keepost/
 ### データベース仕様（IndexedDB）
 
 #### データベース名: `KEEPOST_DB`
-#### バージョン: 6
+#### バージョン: 7
 
 #### テーブル構成
 
@@ -169,13 +184,7 @@ tombolo_keepost/
   - `kept_at`
   - `sns_type`
 
-##### 3. sns_accounts（SNSアカウントテーブル）
-- **インデックス**:
-  - `id` (主キー)
-  - `sns_type`
-  - `username`
-
-##### 4. settings（設定テーブル）
+##### 3. settings（設定テーブル）
 - **インデックス**:
   - `key` (主キー)
 
@@ -220,13 +229,22 @@ tombolo_keepost/
   - `check_memory_safety()`: メモリ使用量監視
 
 #### TwitterImporter
-- **対応形式**: 
+- **対応形式**:
   - JavaScript形式（`window.YTD.tweets.part0 = [...]`）
   - JSON形式
 - **特徴**:
   - ツイートオブジェクトの`tweet`プロパティ内にデータが格納
   - 日付形式の独自パース処理
   - リツイート判定（`retweeted_status`フィールド）
+
+#### TwilogImporter
+- **対応形式**:
+  - CSV形式（Twilogエクスポート）
+- **特徴**:
+  - Shift-JIS/UTF-8文字エンコーディング自動検出
+  - CSVパース処理（クォート、改行対応）
+  - 独自のURL、メディア、メンション抽出処理
+  - データ整合性チェック機能
 
 #### BlueskyImporter
 - **対応形式**:
@@ -246,6 +264,14 @@ tombolo_keepost/
   - HTMLコンテンツのプレーンテキスト変換
   - ブースト（Announce）の処理
   - actor URLからのユーザー名抽出
+
+#### BackupImporter
+- **対応形式**:
+  - KeePostバックアップファイル（JSON形式）
+- **特徴**:
+  - 完全データ復元機能
+  - KEEPアイテムの復元
+  - 設定情報の復元
 
 ### 状態管理（Svelte Store）
 
@@ -292,6 +318,12 @@ tombolo_keepost/
   - インポート済みSNSアカウント
   - 各SNSの最終インポート日時
 
+#### migration_store
+- **役割**: DBマイグレーション進捗の管理
+- **主要機能**:
+  - マイグレーション進捗状態の追跡
+  - UI通知の管理
+
 ### サービス層
 
 #### PostService
@@ -334,6 +366,27 @@ tombolo_keepost/
   - データエクスポート
   - バックアップ/リストア
 
+#### MigrationService
+- **責務**: データベースマイグレーション管理
+- **主要機能**:
+  - バージョン間移行処理
+  - KEEP データ移行
+  - Mastodon ID形式変換
+  - データ整合性チェック
+
+#### ExportService
+- **責務**: データエクスポート機能
+- **主要機能**:
+  - 全データのJSONエクスポート
+  - KEEP アイテムのエクスポート
+  - 設定情報のエクスポート
+
+#### TermsService
+- **責務**: 利用規約管理
+- **主要機能**:
+  - 利用規約同意状態の管理
+  - 同意状態の永続化
+
 ### パフォーマンス最適化
 
 #### メモリ管理
@@ -365,6 +418,9 @@ tombolo_keepost/
 - **@ipld/dag-cbor**: IPLD CBOR形式のデコード
 - **date-fns**: 日付処理ユーティリティ
 - **dexie**: IndexedDBラッパー
+- **encoding-japanese**: 文字エンコーディング検出・変換
+- **jschardet**: 文字セット自動検出
+- **pako**: 圧縮/解凍ユーティリティ
 - **svelte**: リアクティブUIフレームワーク
 - **sweetalert2**: モーダル/アラート表示
 

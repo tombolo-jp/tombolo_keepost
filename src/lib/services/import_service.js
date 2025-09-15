@@ -1,6 +1,7 @@
 import { security_validator } from '../utils/validation.js'
 import { memory_monitor } from '../utils/memory_monitor.js'
 import { TwitterImporter } from './importers/twitter_importer.js'
+import { TwilogImporter } from './importers/twilog_importer.js'
 import { BlueskyImporter } from './importers/bluesky_importer.js'
 import { MastodonImporter } from './importers/mastodon_importer.js'
 import { BackupImporter } from './importers/backup_importer.js'
@@ -17,6 +18,7 @@ export class ImportService {
     // インポーターのマップ
     this.importers = {
       twitter: new TwitterImporter(),
+      twilog: new TwilogImporter(),
       bluesky: new BlueskyImporter(),
       mastodon: new MastodonImporter(),
       backup: new BackupImporter()
@@ -26,20 +28,23 @@ export class ImportService {
 
   /**
    * マルチSNSデータをインポート
-   * @param {string} sns_type - SNS種別（'twitter' | 'bluesky' | 'mastodon'）
+   * @param {string} sns_type - SNS種別（'twitter' | 'bluesky' | 'mastodon' | 'twilog'）
    * @param {File} file - インポートファイル
-   * @param {Function} progress_callback - 進捗コールバック
+   * @param {Object} options - オプション（progress_callback, twilog_usernameなど）
    * @returns {Promise<ImportResult>} インポート結果
    */
-  async import_sns_data(sns_type, file, progress_callback = null) {
+  async import_sns_data(sns_type, file, options = {}) {
+    console.log('[ImportService] import_sns_data called for:', sns_type, 'with options:', options)
     const importer = this.get_importer(sns_type)
 
     if (!importer) {
       throw new Error(`サポートされていないSNS種別: ${sns_type}`)
     }
 
-    // 重複チェック付きのインポートメソッドを使用
-    return await importer.import_data_with_diff(file, progress_callback)
+    // import_data_with_diffメソッドを使用（重複チェック付き）
+    // optionsをそのまま渡す（progress_callback, twitter_username, twilog_usernameなど全て含む）
+    console.log('[ImportService] Calling import_data_with_diff with all options')
+    return await importer.import_data_with_diff(file, options)
   }
 
   /**
@@ -78,6 +83,8 @@ export class ImportService {
       return 'bluesky'
     } else if (filename === 'outbox.json' || filename.includes('mastodon')) {
       return 'mastodon'
+    } else if (filename.endsWith('.csv') || filename.includes('twilog')) {
+      return 'twilog'
     }
 
     // 拡張子から判定

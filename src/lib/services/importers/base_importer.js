@@ -28,7 +28,10 @@ export class BaseImporter {
   }
 
   // 差分インポート機能付きインポート
-  async import_data_with_diff(file, progress_callback = null) {
+  async import_data_with_diff(file, options = {}) {
+    console.log('[BaseImporter.import_data_with_diff] Starting import with diff check, options:', options)
+    const { progress_callback = null, ...other_options } = options;
+    
     try {
       this.report_progress(progress_callback, {
         step: 'init',
@@ -38,22 +41,41 @@ export class BaseImporter {
       
       // 既存のポストIDを事前に取得
       const existing_ids = await post_repository.get_existing_post_ids(this.sns_type);
+      console.log('[BaseImporter.import_data_with_diff] Existing IDs count:', existing_ids.size)
       
       // スキップ数を追跡
       let total_skipped = 0;
       
       // ファイルをインポート（サブクラスの実装を呼ぶ）
-      const import_result = await this.import_data(file, async (posts_batch) => {
-        // 重複チェックを適用
-        const filter_result = await this.filter_duplicates(posts_batch, existing_ids);
-        total_skipped += filter_result.skipped;
-        
-        if (filter_result.posts.length > 0) {
-          // 新規ポストのみを返す
-          return filter_result.posts;
-        }
-        return [];
-      }, progress_callback);
+      // filter_callbackをoptionsオブジェクト内に含める
+      console.log('[BaseImporter.import_data_with_diff] Calling import_data with filter_callback and other options:', other_options)
+      const import_result = await this.import_data(file, {
+        ...other_options,  // twitter_usernameなどのオプションを含める
+        filter_callback: async (posts_batch) => {
+          console.log('[BaseImporter.import_data_with_diff] Filter callback called with posts:', posts_batch?.length)
+          // 重複チェックを適用
+          const filter_result = await this.filter_duplicates(posts_batch, existing_ids);
+          total_skipped += filter_result.skipped;
+          console.log('[BaseImporter.import_data_with_diff] Filter result:', {
+            original: posts_batch?.length,
+            after_filter: filter_result.posts.length,
+            skipped: filter_result.skipped
+          })
+          
+          if (filter_result.posts.length > 0) {
+            // 新規ポストのみを返す
+            return filter_result.posts;
+          }
+          return [];
+        },
+        progress_callback
+      });
+      
+      console.log('[BaseImporter.import_data_with_diff] Import result:', {
+        success: import_result.success,
+        post_count: import_result.post_count,
+        total_skipped
+      })
       
       // インポート結果にスキップ数を追加
       if (import_result.success) {
@@ -70,7 +92,7 @@ export class BaseImporter {
       
       return import_result;
     } catch (error) {
-
+      console.error('[BaseImporter.import_data_with_diff] Error:', error)
       return this.create_error_result(error);
     }
   }
@@ -228,15 +250,18 @@ export class BaseImporter {
    * @returns {Promise<void>}
    */
   async process_posts_in_batches(posts, process_batch, progress_callback = null) {
+    console.log('[BaseImporter.process_posts_in_batches] Starting with posts:', posts.length)
     const total = posts.length
     let processed = 0
     const all_processed_posts = []
     
     for (let i = 0; i < total; i += this.BATCH_SIZE) {
       const batch = posts.slice(i, i + this.BATCH_SIZE)
+      console.log(`[BaseImporter.process_posts_in_batches] Processing batch ${i / this.BATCH_SIZE + 1}, size: ${batch.length}`)
       
       // バッチを処理
       const processed_batch = await process_batch(batch)
+      console.log(`[BaseImporter.process_posts_in_batches] Batch processed, result count: ${processed_batch?.length || 0}`)
       
       // 処理結果を収集
       if (processed_batch && processed_batch.length > 0) {
@@ -266,6 +291,7 @@ export class BaseImporter {
       }
     }
     
+    console.log('[BaseImporter.process_posts_in_batches] Completed. Total posts:', all_processed_posts.length)
     return all_processed_posts
   }
 

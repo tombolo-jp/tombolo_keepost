@@ -40,6 +40,10 @@
   async function handle_file_selected(event) {
     selected_file = event.detail.file
     const sns_type = event.detail.sns_type || selected_sns
+    const twilog_username = event.detail.twilog_username
+    const twitter_username = event.detail.twitter_username
+    const mastodon_account = event.detail.mastodon_account
+    const bluesky_account = event.detail.bluesky_account
 
     if (!sns_type) {
       ui_store.add_notification({
@@ -50,10 +54,10 @@
       return
     }
 
-    await start_import(sns_type)
+    await start_import(sns_type, twilog_username, twitter_username, mastodon_account, bluesky_account)
   }
 
-  async function start_import(sns_type) {
+  async function start_import(sns_type, twilog_username = null, twitter_username = null, mastodon_account = null, bluesky_account = null) {
     if (!selected_file) return
 
     ui_store.start_import()
@@ -65,7 +69,11 @@
         (progress) => {
           import_progress = progress
           ui_store.update_import_progress(progress)
-        }
+        },
+        twilog_username,
+        twitter_username,
+        mastodon_account,
+        bluesky_account
       )
 
       // インポート成功

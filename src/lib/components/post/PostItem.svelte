@@ -60,12 +60,79 @@
       return `画像 ${media_count}枚 (クリックで表示)`
     }
   }
+
+  // SNSアイコンのクラスを取得
+  function get_sns_icon_class(sns_type) {
+    switch(sns_type) {
+      case 'twitter':
+        return 'fa-brands fa-twitter'
+      case 'bluesky':
+        return 'fa-brands fa-bluesky'
+      case 'mastodon':
+        return 'fa-brands fa-mastodon'
+      default:
+        return 'fa-solid fa-share-nodes'
+    }
+  }
+
+  // SNS表示名を取得
+  function get_sns_display_name(sns_type) {
+    switch(sns_type) {
+      case 'twitter':
+        return 'Twitter'
+      case 'bluesky':
+        return 'Bluesky'
+      case 'mastodon':
+        return 'Mastodon'
+      default:
+        return sns_type
+    }
+  }
+
+  // 表示する著者名を取得
+  function get_display_author_name() {
+    // Blueskyのリポストで元の投稿者が分かっている場合
+    if (post.sns_type === 'bluesky' && post.is_repost && post.sns_specific?.original_author) {
+      return post.sns_specific.original_author
+    }
+
+    // Twitterの手動RTで元の投稿者が分かっている場合
+    if (post.sns_type === 'twitter' && post.is_repost && post.sns_specific?.original_author) {
+      return post.sns_specific.original_author
+    }
+
+    // authorオブジェクトから名前を取得
+    if (post.author) {
+      // nameが有効な値ならそれを使用
+      if (post.author.name && post.author.name !== 'unknown' && post.author.name !== 'Twitter User') {
+        return post.author.name
+      }
+      // usernameが有効な値ならそれを使用
+      if (post.author.username && post.author.username !== 'unknown' && post.author.username !== 'twitter_user') {
+        return post.author.username
+      }
+    }
+
+    // フォールバック
+    return 'unknown'
+  }
 </script>
 
 <article class="post-item {sns_class}">
   <div class="post-header">
     <div class="post-meta">
-      <span class="author-name">@{post.sns_type}</span>
+      {#if post.is_repost}
+        <span class="repost-indicator" title="リポスト">
+          <i class="fas fa-retweet"></i>
+        </span>
+      {/if}
+      <span class="author-name">
+        <span class="sns-icon-wrapper">
+          <i class="{get_sns_icon_class(post.sns_type)} sns-icon"></i>
+          <span class="sns-name">{get_sns_display_name(post.sns_type)}</span>
+        </span>
+        {get_display_author_name()}
+      </span>
       <span class="post-date">{formatted_date}</span>
     </div>
 
@@ -203,26 +270,69 @@
   .post-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     margin-bottom: 0.75rem;
     column-gap: 0.75rem;
   }
 
   .post-meta {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 0.5rem;
     color: #6b7280;
     font-size: 0.875rem;
   }
 
   .author-name {
+    display: flex;
+    flex-direction: column;
     font-weight: 600;
     color: #374151;
   }
 
+  .sns-icon-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: normal;
+    font-size: 0.75rem;
+  }
+
+  .sns-icon {
+    font-size: 0.75rem;
+    opacity: 0.5;
+  }
+
+  .sns-name {
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  /* SNS種別によるアイコンとテキストカラー */
+  .sns-twitter .sns-icon,
+  .sns-twitter .sns-name {
+    color: #3B806B;
+  }
+
+  .sns-bluesky .sns-icon,
+  .sns-bluesky .sns-name {
+    color: #00a8ff;
+  }
+
+  .sns-mastodon .sns-icon,
+  .sns-mastodon .sns-name {
+    color: #6364ff;
+  }
+
   .post-date {
     color: #9ca3af;
+  }
+
+  .repost-indicator {
+    color: #10b981;
+    font-size: 1.25rem;
+    margin-right: 0.25rem;
+    transform: translateY(-0.2rem);
   }
 
   .post-actions {
@@ -236,16 +346,17 @@
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0;
     transition: transform 0.2s;
     color: #d1d5db;
+    transform: translateY(-12px);
   }
 
   .keep-button::after {
     content: 'KEEP';
     position: absolute;
     display: table;
-    top: calc(100% - 0.3rem);
+    top: 100%;
     left: 50%;
     transform: translateX(-50%);
     line-height: 1;
@@ -254,7 +365,7 @@
   }
 
   .keep-button:hover {
-    transform: scale(1.2);
+    transform: translateY(-12px)  scale(1.2);
   }
 
   .keep-button.is-kept {

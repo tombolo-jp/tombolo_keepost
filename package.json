@@ -14,6 +14,8 @@
     "@ipld/dag-cbor": "^9.2.4",
     "date-fns": "^2.30.0",
     "dexie": "^4.0.1",
+    "encoding-japanese": "^2.2.0",
+    "jschardet": "^3.1.4",
     "pako": "^2.1.0",
     "svelte": "^4.2.0",
     "sweetalert2": "^11.22.2"
@@ -31,5 +33,5 @@
     "svelte"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "GPL-3.0"
 }

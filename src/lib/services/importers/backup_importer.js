@@ -8,7 +8,7 @@ export class BackupImporter extends BaseImporter {
   constructor() {
     super('backup')
     this.SUPPORTED_VERSION = 1
-    this.SUPPORTED_DB_VERSION = 6
+    this.SUPPORTED_DB_VERSION = 9
   }
 
   async import_data(file, progress_callback = null) {
@@ -136,31 +136,33 @@ export class BackupImporter extends BaseImporter {
   }
 
   check_version_compatibility(db_version) {
-    if (db_version === this.SUPPORTED_DB_VERSION) {
+    const MIN_SUPPORTED = 6
+    const MAX_SUPPORTED = 9
+    
+    if (db_version >= MIN_SUPPORTED && db_version <= MAX_SUPPORTED) {
       return { compatible: true }
     }
     
-    if (db_version < this.SUPPORTED_DB_VERSION) {
+    if (db_version < MIN_SUPPORTED) {
       return { 
         compatible: false, 
-        can_proceed: true,
-        message: '古いバージョンのバックアップファイルです。互換性の問題が発生する可能性があります。'
+        can_proceed: false,
+        message: `このバックアップファイルは古すぎます（バージョン${db_version}）。バージョン${MIN_SUPPORTED}以降のバックアップファイルを使用してください。`
       }
     }
     
     return { 
       compatible: false, 
       can_proceed: false,
-      message: 'このバックアップファイルは新しいバージョンで作成されています。アプリケーションを更新してください。'
+      message: `このバックアップファイルは新しいバージョン（バージョン${db_version}）で作成されています。アプリケーションを更新してください。`
     }
   }
 
   async clear_existing_data() {
     try {
-      await db.transaction('rw', db.posts, db.keep_items, db.sns_accounts, db.settings, async () => {
+      await db.transaction('rw', db.posts, db.keep_items, db.settings, async () => {
         await db.posts.clear()
         await db.keep_items.clear()
-        await db.sns_accounts.clear()
         await db.settings.clear()
       })
     } catch (error) {
@@ -173,7 +175,6 @@ export class BackupImporter extends BaseImporter {
     const stats = {
       posts: 0,
       keep_items: 0,
-      sns_accounts: 0,
       settings: 0
     }
     
@@ -203,7 +204,7 @@ export class BackupImporter extends BaseImporter {
   }
 
   async restore_batch(batch_items, stats) {
-    await db.transaction('rw', db.posts, db.keep_items, db.sns_accounts, db.settings, async () => {
+    await db.transaction('rw', db.posts, db.keep_items, db.settings, async () => {
       for (const item of batch_items) {
         if (!item.type || !item.data) continue
         
@@ -218,8 +219,8 @@ export class BackupImporter extends BaseImporter {
               stats.keep_items++
               break
             case 'sns_account':
-              await db.sns_accounts.add(item.data)
-              stats.sns_accounts++
+              // sns_accountsテーブルは削除されたのでスキップ
+              console.info('[BackupImporter] Skipping sns_account (table removed)')
               break
             case 'setting':
               await db.settings.add(item.data)

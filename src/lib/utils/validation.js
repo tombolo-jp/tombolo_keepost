@@ -8,18 +8,20 @@ export class SecurityValidator {
     this.MAX_JS_SIZE = 500 * 1024 * 1024        // 500MB
     this.MAX_CAR_SIZE = 1024 * 1024 * 1024      // 1GB (Bluesky)
     this.MAX_JSON_SIZE = 500 * 1024 * 1024      // 500MB (Mastodon)
+    this.MAX_CSV_SIZE = 500 * 1024 * 1024       // 500MB (Twilog)
     
     // ツイート数制限
     this.MAX_TWEETS = 200000  // 20万ツイート
     
     // 許可されるファイル拡張子
-    this.ALLOWED_EXTENSIONS = ['.js', '.car', '.json']
+    this.ALLOWED_EXTENSIONS = ['.js', '.car', '.json', '.csv']
     
     // ファイル種別ごとのエラーメッセージ
     this.FILE_TYPE_MESSAGES = {
       '.js': 'tweets.jsファイルを選択してください',
       '.car': 'Blueskyのエクスポートファイル(.car)を選択してください',
-      '.json': 'Mastodonのエクスポートファイル(outbox.json)を選択してください'
+      '.json': 'Mastodonのエクスポートファイル(outbox.json)を選択してください',
+      '.csv': 'TwilogのエクスポートファイルCSV (UTF8)を選択してください'
     }
   }
 
@@ -99,6 +101,9 @@ export class SecurityValidator {
           message: `Mastodonのエクスポートファイルはoutbox.jsonである必要があります。`
         }
       }
+    } else if (file_name.endsWith('.csv')) {
+      // Twilogファイルの場合の検証（特別な検証は不要）
+      // CSVファイルの詳細な検証は後続の処理で実施
     }
     // .carファイルの場合は特別な検証は不要（Blueskyは.car形式のみ）
 
@@ -124,6 +129,9 @@ export class SecurityValidator {
     } else if (file_name.endsWith('.json')) {
       max_size = this.MAX_JSON_SIZE
       file_type = 'JSON'
+    } else if (file_name.endsWith('.csv')) {
+      max_size = this.MAX_CSV_SIZE
+      file_type = 'CSV'
     }
 
     if (max_size > 0 && file.size > max_size) {

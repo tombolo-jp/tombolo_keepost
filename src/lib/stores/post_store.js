@@ -3,7 +3,7 @@ import { post_service } from '../services/post_service.js'
 import { search_service } from '../services/search_service.js'
 
 /**
- * マルチSNS対応ポストデータストア
+ * マルチSNS対応投稿データストア
  */
 function create_post_store() {
   const { subscribe, set, update } = writable({
@@ -26,7 +26,7 @@ function create_post_store() {
       has_media: null,
       has_links: null
     },
-    sort: 'desc',
+    sort: 'created_desc',  // created_desc | created_asc | kept_desc | kept_asc
     search_query: '',
     is_loading: false,
     error: null,
@@ -53,10 +53,10 @@ function create_post_store() {
       try {
         const current_state = get()
         const filter = { ...current_state.filter }
-        
+
         // タブIDが指定されていない場合は、現在のactive_tabを使用
         const active_tab = tab_id || current_state.active_tab
-        
+
         // タブに応じてフィルターを設定
         if (active_tab === 'keep') {
           filter.is_kept = true
@@ -119,20 +119,20 @@ function create_post_store() {
      */
     async search_posts(query, tab_id = null) {
 
-      update(state => ({ 
-        ...state, 
+      update(state => ({
+        ...state,
         search_query: query,
-        is_loading: true, 
-        error: null 
+        is_loading: true,
+        error: null
       }))
 
       try {
         const current_state = get()
         const filter = { ...current_state.filter }
-        
+
         // タブIDが指定されていない場合は、現在のactive_tabを使用
         const active_tab = tab_id || current_state.active_tab
-        
+
         // タブフィルターを適用
         if (active_tab === 'keep') {
           filter.is_kept = true
@@ -198,14 +198,14 @@ function create_post_store() {
 
     /**
      * ソート順を設定
-     * @param {string} sort - ソート順（'asc' | 'desc'）
+     * @param {string} sort - ソート順（'created_desc' | 'created_asc' | 'kept_desc' | 'kept_asc'）
      */
     set_sort(sort) {
       update(state => ({ ...state, sort }))
-      
+
       // 現在の状態を取得
       const current_state = get()
-      
+
       // 検索クエリがある場合は検索を再実行、なければ通常のload_posts
       if (current_state.search_query) {
         this.search_posts(current_state.search_query, current_state.active_tab)
@@ -231,7 +231,7 @@ function create_post_store() {
     update_post(post_id, updates) {
       update(state => ({
         ...state,
-        posts: state.posts.map(post => 
+        posts: state.posts.map(post =>
           post.id === post_id ? { ...post, ...updates } : post
         )
       }))
@@ -261,7 +261,7 @@ function create_post_store() {
           has_media: null,
           has_links: null
         },
-        sort: 'desc',
+        sort: 'created_desc',  // created_desc | created_asc | kept_desc | kept_asc
         search_query: '',
         is_loading: false,
         error: null,
@@ -291,7 +291,7 @@ export const has_filter = derived(
   post_store,
   $post_store => {
     const filter = $post_store.filter
-    return filter.year_month || filter.start_date || filter.end_date || 
+    return filter.year_month || filter.start_date || filter.end_date ||
            filter.language || filter.has_media || filter.has_links ||
            $post_store.search_query.length > 0
   }

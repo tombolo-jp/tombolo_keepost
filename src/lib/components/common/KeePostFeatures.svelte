@@ -9,7 +9,7 @@
     </h3>
     <div class="guide-content">
       <p class="guide-text">
-        Twitter / Bluesky / Mastodon のポストデータを一元管理できるアプリです。SNSの種類・年月・キーワードなどで検索したり、自分がお気に入りのポストを保存することができます。
+        Twitter / Twilog / Bluesky / Mastodon の投稿データを一元管理できるアプリです。SNSの種類・年月・キーワードによる検索、お気に入りの投稿の保存などの機能があります。
       </p>
     </div>
   </div>
@@ -27,7 +27,7 @@
         <li>データはブラウザ内に保存されます (IndexedDB, localStorage)</li>
         <li>サーバーへの送信は一切ありません</li>
         <li>データをご自身でバックアップ可能です</li>
-        <li>オープンソース化を予定しています (2025年9月予定)</li>
+        <li><a href="https://github.com/tombolo-jp/tombolo_keepost" target="_blank">オープンソース</a> のため、サービス終了の心配がありません</li>
       </ul>
     </div>
   </div>

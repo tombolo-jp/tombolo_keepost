@@ -18,6 +18,7 @@
   function get_sns_icon(sns_type) {
     const icons = {
       twitter: '🐦',
+      twilog: '🐦',
       bluesky: '☁️',
       mastodon: '🐘'
     }

@@ -15,19 +15,13 @@ export class KeepService {
   async add_to_keep(post_id) {
     // ポストの存在確認
     const post_data = await post_repository.get_post_by_id(post_id)
-    
+
     if (!post_data) {
       throw new Error('ポストが見つかりません')
     }
-    
+
     // KEEPリポジトリに追加
     await keep_repository.add_keep_item(post_id, post_data.sns_type)
-    
-    // ポストのis_keptフラグを更新
-    await post_repository.update_post(post_id, {
-      is_kept: true,
-      kept_at: new Date().toISOString()
-    })
   }
 
   /**
@@ -38,12 +32,6 @@ export class KeepService {
   async remove_from_keep(post_id) {
     // KEEPリポジトリから削除
     await keep_repository.remove_keep_item(post_id)
-    
-    // ポストのis_keptフラグを更新
-    await post_repository.update_post(post_id, {
-      is_kept: false,
-      kept_at: null
-    })
   }
 
   /**
@@ -77,7 +65,7 @@ export class KeepService {
       sort,
       sns_type
     })
-    
+
     // 総数を取得
     const total_count = await keep_repository.get_keep_count({ sns_type })
     const total_pages = Math.ceil(total_count / per_page)
@@ -107,9 +95,16 @@ export class KeepService {
       per_page = 20
     } = options
 
-    // KEEPフィルターを追加して検索
+    // KEEPされているポストIDを取得
+    const keep_items = await keep_repository.get_keep_list({
+      limit: 10000,
+      offset: 0
+    })
+    const kept_post_ids = keep_items.map(item => item.post_id)
+
+    // KEEPされているポストのみを検索
     const search_results = await search_service.search(query, {
-      filter: { is_kept: true },
+      filter: { post_ids: kept_post_ids },
       limit: per_page,
       offset: (page - 1) * per_page
     })
@@ -142,14 +137,14 @@ export class KeepService {
    * @param {string} format - エクスポート形式（'json' | 'csv'）
    * @returns {Promise<string>} エクスポートデータ
    */
-  
+
 
   /**
    * KEEPデータをCSV形式に変換
    * @param {Array} keeps - KEEPアイテムの配列
    * @returns {string} CSV文字列
    */
-  
+
 
   /**
    * バッチでKEEPに追加
@@ -215,8 +210,8 @@ export class KeepService {
    */
   async get_keeps_by_date_range(start_date, end_date) {
     const keep_items = await keep_repository.get_keeps_by_date_range(start_date, end_date)
-    
-    // ポストデータを取得
+
+    // 投稿データを取得
     const posts = []
     for (const keep_item of keep_items) {
       const post = await post_repository.get_post_by_id(keep_item.post_id)
@@ -224,8 +219,8 @@ export class KeepService {
         posts.push(post)
       }
     }
-    
-    // KEEPアイテムとポストデータをマージ
+
+    // KEEPアイテムと投稿データをマージ
     return keep_items.map(item => {
       const post = posts.find(p => p.id === item.post_id)
       return {
@@ -240,20 +235,6 @@ export class KeepService {
    * @returns {Promise<void>}
    */
   async clear_all_keeps() {
-    // すべてのKEEPアイテムを取得
-    const all_keeps = await keep_repository.get_keep_list({
-      limit: 10000,
-      offset: 0
-    })
-    
-    // ポストのis_keptフラグをリセット
-    for (const keep of all_keeps) {
-      await post_repository.update_post(keep.id, {
-        is_kept: false,
-        kept_at: null
-      })
-    }
-    
     // KEEPリポジトリをクリア
     await keep_repository.clear_all_keeps()
   }

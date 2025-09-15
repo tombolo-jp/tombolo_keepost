@@ -17,7 +17,7 @@
 
 
   let active_filters = {}
-  let current_sort = 'desc'
+  let current_sort = 'created_desc'  // デフォルトを投稿日時新しい順に
   let selected_sns = ''  // SNSフィルター用変数を追加
   let is_keep_filtered = false  // KEEPフィルター状態
   let search_value = ''  // 検索値を追跡
@@ -128,8 +128,16 @@
     is_keep_filtered = checked
     filter_store.set_keep_filter(checked ? true : null)
 
+    // KEEPフィルター切り替え時にソートをリセット
+    if (checked) {
+      current_sort = 'created_desc'  // KEEPフィルター時のデフォルト
+    } else {
+      current_sort = 'created_desc'  // 通常のソート（desc相当）
+    }
+
     // post_storeにもフィルターを設定
     post_store.set_filter({ is_kept: checked ? true : null })
+    post_store.set_sort(current_sort)
   }
 
   async function handle_sort_change(event) {
@@ -192,8 +200,15 @@
               bind:value={current_sort}
               on:change={handle_sort_change}
             >
-              <option value="desc">新しい順</option>
-              <option value="asc">古い順</option>
+              {#if is_keep_filtered}
+                <option value="created_desc">投稿日時 新しい順</option>
+                <option value="created_asc">投稿日時 古い順</option>
+                <option value="kept_desc">KEEP日時 新しい順</option>
+                <option value="kept_asc">KEEP日時 古い順</option>
+              {:else}
+                <option value="created_desc">新しい順</option>
+                <option value="created_asc">古い順</option>
+              {/if}
             </select>
           </div>
 

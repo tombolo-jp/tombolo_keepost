@@ -10,11 +10,25 @@
         'Twitterの「設定」→「アカウント」→「データのアーカイブをダウンロード」を選択',
         'アーカイブが準備できたらメールで通知が届きます',
         'ダウンロードしたZIPファイルを解凍',
-        'data/tweets.jsファイルをインポート'
+        'data/tweets.jsファイルを選択してインポート'
       ],
       notes: [
-        '件数が多いときには、インポート処理に時間がかかる場合があります',
-        'インポート後も元のファイルは保管することをお勧めします'
+        { text: 'インポート後も元のファイルは保管することをお勧めします', important: true },
+        '件数が多いときには、インポート処理に時間がかかる場合があります'
+      ]
+    },
+    twilog: {
+      file_format: '.csv (CSVファイル)',
+      import_steps: [
+        'Twilogの「設定・管理」→「ログのダウンロード」',
+        '「CSV (UTF8)」を選択してダウンロード',
+        'CSVファイルを選択してインポート'
+      ],
+      notes: [
+        { text: 'UTF-8形式のCSVファイルのみ対応しています', important: true },
+        { text: 'インポート後も元のファイルは保管することをお勧めします', important: true },
+        'Twilogインポートでは「いいね」と「リツイート」の数が取得できません',
+        '可能な限りTwitter公式のエクスポートデータをご利用ください'
       ]
     },
     bluesky: {
@@ -22,11 +36,12 @@
       import_steps: [
         'Blueskyの「設定」→「アカウント」→「私のデータをエクスポートする」を選択',
         '「CARファイルをダウンロード」を選択',
-        'ダウンロードした .car ファイルをインポート'
+        '.car ファイルを選択してインポート'
       ],
       notes: [
-        '件数が多いときには、インポート処理に時間がかかる場合があります',
-        'インポート後も元のファイルは保管することをお勧めします'
+        { text: 'Bluesky CARファイルには他人の投稿のリポストが含まれていないため、インポートの対象外となります。予めご了承ください。', important: true },
+        { text: 'インポート後も元のファイルは保管することをお勧めします', important: true },
+        '件数が多いときには、インポート処理に時間がかかる場合があります'
       ]
     },
     mastodon: {
@@ -38,8 +53,8 @@
         'outbox.jsonファイルを選択してインポート'
       ],
       notes: [
+        { text: 'インポート後も元のファイルは保管することをお勧めします', important: true },
         '件数が多いときには、インポート処理に時間がかかる場合があります',
-        'インポート後も元のファイルは保管することをお勧めします',
         'インスタンスによってエクスポート形式が異なる場合があります'
       ]
     }
@@ -89,7 +104,13 @@
       <div class="guide-content">
         <ul class="guide-notes">
           {#each current_guide.notes as note}
-            <li class="guide-note-item">{note}</li>
+            {#if typeof note === 'object' && note.important}
+              <li class="guide-note-item guide-note-important">{note.text}</li>
+            {:else if typeof note === 'object'}
+              <li class="guide-note-item">{note.text}</li>
+            {:else}
+              <li class="guide-note-item">{note}</li>
+            {/if}
           {/each}
         </ul>
       </div>
@@ -224,8 +245,20 @@
     content: '•';
     position: absolute;
     left: 0.5rem;
-    color: #f59e0b;
+    color: #888;
     font-weight: bold;
+  }
+
+  .guide-note-important {
+    color: #dc2626;
+    font-weight: bold;
+  }
+
+  .guide-note-important::before {
+    content: '\f071';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    color: #dc2626;
   }
 
   .guide-note {

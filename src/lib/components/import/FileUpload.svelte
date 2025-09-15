@@ -1,6 +1,8 @@
 <script>
   import { createEventDispatcher } from 'svelte'
+  import Swal from 'sweetalert2'
   import { security_validator } from '../../utils/validation.js'
+  import { sns_account_validator } from '../../utils/sns_account_validator.js'
   import { import_service } from '../../services/import_service.js'
   import { terms_service } from '../../services/terms_service.js'
   import TermsModal from '../common/TermsModal.svelte'
@@ -17,6 +19,10 @@
   let selected_file = null
   let agreed_to_terms = false
   let show_terms_modal = false
+  let twilog_username = ''
+  let twitter_username = ''
+  let mastodon_account = ''
+  let bluesky_account = ''
 
   // サポートされているSNS情報を取得
   $: sns_info = selected_sns
@@ -117,12 +123,116 @@
     }
   }
 
-  function start_import() {
+  async function start_import() {
     if (!selected_file) return
+
+    // Twilogの場合はユーザー名が必須
+    if (selected_sns === 'twilog') {
+      if (!twilog_username.trim()) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: 'Twitterのユーザー名を入力してください',
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+      const result = sns_account_validator.validate('twilog', twilog_username)
+      if (!result.valid) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: result.error,
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+    }
+
+    // Twitterの場合もユーザー名が必須
+    if (selected_sns === 'twitter') {
+      if (!twitter_username.trim()) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: 'Twitterのユーザー名を入力してください',
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+      const result = sns_account_validator.validate('twitter', twitter_username)
+      if (!result.valid) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: result.error,
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+    }
+
+    // Mastodonの場合もアカウント名が必須
+    if (selected_sns === 'mastodon') {
+      if (!mastodon_account.trim()) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: 'Mastodonのアカウント名@インスタンス名を入力してください',
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+      const result = sns_account_validator.validate('mastodon', mastodon_account)
+      if (!result.valid) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: result.error,
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+    }
+
+    // Blueskyの場合もアカウント名が必須
+    if (selected_sns === 'bluesky') {
+      if (!bluesky_account.trim()) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: 'Blueskyのアカウント名を入力してください',
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+      const result = sns_account_validator.validate('bluesky', bluesky_account)
+      if (!result.valid) {
+        await Swal.fire({
+          title: 'アカウント名の入力に誤りがあります',
+          text: result.error,
+          icon: 'error',
+          confirmButtonText: '閉じる',
+          confirmButtonColor: '#ef4444'
+        })
+        return
+      }
+    }
 
     dispatch('file-selected', {
       file: selected_file,
-      sns_type: selected_sns
+      sns_type: selected_sns,
+      twilog_username: selected_sns === 'twilog' ? sns_account_validator.normalize('twilog', twilog_username) : null,
+      twitter_username: selected_sns === 'twitter' ? sns_account_validator.normalize('twitter', twitter_username) : null,
+      mastodon_account: selected_sns === 'mastodon' ? sns_account_validator.normalize('mastodon', mastodon_account) : null,
+      bluesky_account: selected_sns === 'bluesky' ? sns_account_validator.normalize('bluesky', bluesky_account) : null
     })
   }
 
@@ -200,6 +310,90 @@
 
 
 
+  {#if selected_sns === 'twilog'}
+    <div class="twilog-username-section">
+      <label class="username-label">
+        <span>Twitterユーザー名 <span class="required">(必須)</span></span>
+        <input
+          type="text"
+          bind:value={twilog_username}
+          placeholder="例: tombolo_jp"
+          class="username-input"
+          on:input={(e) => {
+            twilog_username = sns_account_validator.normalize('twilog', e.target.value)
+            error_message = ''
+          }}
+        />
+      </label>
+      <p class="username-hint">
+        @を除いたユーザー名を入力してください。
+      </p>
+    </div>
+  {/if}
+
+  {#if selected_sns === 'twitter'}
+    <div class="twitter-username-section">
+      <label class="username-label">
+        <span>Twitterユーザー名 <span class="required">(必須)</span></span>
+        <input
+          type="text"
+          bind:value={twitter_username}
+          placeholder="例: tombolo_jp"
+          class="username-input"
+          on:input={(e) => {
+            twitter_username = sns_account_validator.normalize('twitter', e.target.value)
+            error_message = ''
+          }}
+        />
+      </label>
+      <p class="username-hint">
+        @を除いたユーザー名を入力してください。
+      </p>
+    </div>
+  {/if}
+
+  {#if selected_sns === 'mastodon'}
+    <div class="mastodon-account-section">
+      <label class="username-label">
+        <span>Mastodonアカウント名 <span class="required">(必須)</span></span>
+        <input
+          type="text"
+          bind:value={mastodon_account}
+          placeholder="例: example@example.com"
+          class="username-input"
+          on:input={(e) => {
+            mastodon_account = sns_account_validator.normalize('mastodon', e.target.value)
+            error_message = ''
+          }}
+        />
+      </label>
+      <p class="username-hint">
+        アカウント名@インスタンス名の形式で入力してください。
+      </p>
+    </div>
+  {/if}
+
+  {#if selected_sns === 'bluesky'}
+    <div class="bluesky-account-section">
+      <label class="username-label">
+        <span>Blueskyアカウント名 <span class="required">(必須)</span></span>
+        <input
+          type="text"
+          bind:value={bluesky_account}
+          placeholder="例: username.bsky.social"
+          class="username-input"
+          on:input={(e) => {
+            bluesky_account = sns_account_validator.normalize('bluesky', e.target.value)
+            error_message = ''
+          }}
+        />
+      </label>
+      <p class="username-hint">
+        アカウント名（例: username.bsky.social）を入力してください。
+      </p>
+    </div>
+  {/if}
+
   {#if require_agreement}
     <div class="agreement-section">
       <label class="agreement-checkbox">
@@ -224,9 +418,9 @@
     <div class="import-button-section">
       <button
         class="import-button"
-        class:disabled={!selected_file || !agreed_to_terms}
+        class:disabled={!selected_file || !agreed_to_terms || (selected_sns === 'twilog' && !twilog_username.trim()) || (selected_sns === 'twitter' && !twitter_username.trim()) || (selected_sns === 'mastodon' && !mastodon_account.trim()) || (selected_sns === 'bluesky' && !bluesky_account.trim())}
         on:click={start_import}
-        disabled={!selected_file || !agreed_to_terms}
+        disabled={!selected_file || !agreed_to_terms || (selected_sns === 'twilog' && !twilog_username.trim()) || (selected_sns === 'twitter' && !twitter_username.trim()) || (selected_sns === 'mastodon' && !mastodon_account.trim()) || (selected_sns === 'bluesky' && !bluesky_account.trim())}
       >
         インポート開始
       </button>
@@ -392,6 +586,83 @@
       font-size: 0.875rem;
       padding: 0.625rem 1.25rem;
     }
+  }
+
+  /* Twilogユーザー名入力セクション */
+  .twilog-username-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #e0f2fe;
+    border: 1px solid #0ea5e9;
+    border-radius: 6px;
+  }
+
+  /* Twitterユーザー名入力セクション */
+  .twitter-username-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #e0f2fe;
+    border: 1px solid #0ea5e9;
+    border-radius: 6px;
+  }
+
+  /* Mastodonアカウント入力セクション */
+  .mastodon-account-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #e0f2fe;
+    border: 1px solid #0ea5e9;
+    border-radius: 6px;
+  }
+
+  /* Blueskyアカウント入力セクション */
+  .bluesky-account-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #e0f2fe;
+    border: 1px solid #0ea5e9;
+    border-radius: 6px;
+  }
+
+  .username-label {
+    display: block;
+  }
+
+  .username-label span {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #374151;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .username-label .required {
+    display: inline;
+    color: #ef4444;
+    margin-left: 0.25rem;
+  }
+
+  .username-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+  }
+
+  .username-input:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+  }
+
+  .username-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: #6b7280;
+    line-height: 1.4;
   }
 
   /* 同意セクション */

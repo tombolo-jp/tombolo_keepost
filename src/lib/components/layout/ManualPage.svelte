@@ -20,7 +20,7 @@
 
     <section id="introduction" class="manual-section">
       <h2>はじめに</h2>
-      <p><strong>KeePost</strong>は、Twitter (X) / Bluesky / Mastodon などのSNSから出力したポストデータを、ブラウザ上で閲覧できるWebアプリです。<br>すべてのデータは、ご利用のブラウザ内 (IndexedDB / localStorage) に保存されます。サーバーへの送信は一切行いません。</p>
+      <p><strong>KeePost</strong>は、Twitter (X) / Bluesky / Mastodon などのSNSから出力した投稿データを、ブラウザ上で閲覧できるWebアプリです。<br>すべてのデータは、ご利用のブラウザ内 (IndexedDB / localStorage) に保存されます。サーバーへの送信は一切行いません。</p>
     </section>
 
     <section id="import-data" class="manual-section">
@@ -102,7 +102,7 @@
         <h3>KeePostデータのエクスポート/インポート</h3>
         <p>設定ページから、以下の操作が可能です。</p>
         <ul>
-          <li>すべてのポストデータ・KEEPデータをエクスポート</li>
+          <li>すべての投稿データ・KEEPデータをエクスポート</li>
           <li>エクスポートしたファイルをインポートして復元</li>
         </ul>
       </div>
@@ -111,7 +111,7 @@
         <h3>データの削除</h3>
         <p>設定ページから、以下の操作が可能です。</p>
         <ul>
-          <li>すべてのポストデータを削除</li>
+          <li>すべての投稿データを削除</li>
           <li><del>特定のSNSのデータのみを削除</del> (開発予定)</li>
         </ul>
       </div>

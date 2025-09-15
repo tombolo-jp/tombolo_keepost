@@ -65,14 +65,14 @@ export class KeepRepository {
   /**
    * KEEP一覧を取得（ページネーション対応）
    * @param {Object} options - クエリオプション
-   * @returns {Promise<Array>} KEEPアイテムとポストデータの配列
+   * @returns {Promise<Array>} KEEPアイテムと投稿データの配列
    */
   async get_keep_list(options = {}) {
-    const { 
-      limit = 20, 
-      offset = 0, 
+    const {
+      limit = 20,
+      offset = 0,
       sort = 'desc',
-      sns_type = null 
+      sns_type = null
     } = options;
 
     try {
@@ -95,7 +95,7 @@ export class KeepRepository {
         .limit(limit)
         .toArray();
 
-      // 対応するポストデータを取得
+      // 対応する投稿データを取得
       const keep_list = [];
       for (const keep_item of keep_items) {
         const post = await db.posts.get(keep_item.post_id);
@@ -128,11 +128,11 @@ export class KeepRepository {
   async get_keep_stats() {
     try {
       const total_count = await db.keep_items.count();
-      
+
       // SNS別の集計
       const by_sns_type = {};
       const sns_types = ['twitter', 'bluesky', 'mastodon'];
-      
+
       for (const sns_type of sns_types) {
         by_sns_type[sns_type] = await db.keep_items
           .where('sns_type')

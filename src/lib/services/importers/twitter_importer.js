@@ -1,5 +1,5 @@
 import { BaseImporter } from './base_importer.js'
-import { create_post_from_raw_data } from '../../models/post.js'
+import { PostModel, create_post_from_raw_data } from '../../models/post.js'
 import { security_validator } from '../../utils/validation.js'
 
 /**
@@ -17,7 +17,11 @@ export class TwitterImporter extends BaseImporter {
    * @param {Function} progress_callback - 進捗コールバック
    * @returns {Promise<ImportResult>} インポート結果
    */
-  async import_data(file, filter_callback = null, progress_callback = null) {
+  async import_data(file, options = {}) {
+    const { progress_callback = null, filter_callback = null, twitter_username = null } = options;
+    
+    console.log('[TwitterImporter] import_data called with options:', { twitter_username, hasFilterCallback: !!filter_callback })
+    
     try {
       // ファイル検証
       const validation_result = this.validate_file(file)
@@ -37,6 +41,8 @@ export class TwitterImporter extends BaseImporter {
 
       const raw_tweets = await this.parse_tweet_data(content)
       
+      console.log('[TwitterImporter] Parsed tweets count:', raw_tweets?.length)
+      
       if (!raw_tweets || raw_tweets.length === 0) {
         throw new Error('有効なツイートデータが見つかりませんでした')
       }
@@ -53,14 +59,18 @@ export class TwitterImporter extends BaseImporter {
         message: `${raw_tweets.length.toLocaleString()}件のツイートを検出しました`
       })
 
-      // バッチ処理でポストを変換
+      // バッチ処理でポストを変換（twitter_usernameを渡す）
+      console.log('[TwitterImporter] Starting batch processing with username:', twitter_username)
       const posts = await this.process_posts_in_batches(
         raw_tweets,
         async (batch) => {
-          const transformed = await this.transform_posts_batch(batch, null)
+          console.log('[TwitterImporter] Processing batch of size:', batch.length)
+          const transformed = await this.transform_posts_batch_with_username(batch, twitter_username)
+          console.log('[TwitterImporter] Transformed posts count:', transformed?.length)
           // フィルターコールバックがある場合は適用
           if (filter_callback) {
             const filtered = await filter_callback(transformed)
+            console.log('[TwitterImporter] Filtered posts count:', filtered?.length)
             return filtered || []
           }
           return transformed
@@ -68,10 +78,11 @@ export class TwitterImporter extends BaseImporter {
         progress_callback
       )
 
+      console.log('[TwitterImporter] Final posts count:', posts?.length)
       return this.create_import_result(true, posts ? posts.length : 0, posts || [])
 
     } catch (error) {
-
+      console.error('[TwitterImporter] Error:', error)
       return this.create_error_result(error)
     }
   }
@@ -109,6 +120,65 @@ export class TwitterImporter extends BaseImporter {
       
       throw new Error(user_message)
     }
+  }
+
+  /**
+   * バッチ処理でツイートを変換（ユーザー名付き）
+   * @param {Array} raw_posts - 変換対象のツイート配列
+   * @param {string|null} twitter_username - Twitterユーザー名
+   * @returns {Promise<Array>} 変換されたポストモデルの配列
+   */
+  /**
+   * バッチ処理でツイートを変換（ユーザー名付き）
+   * @param {Array} raw_posts - 変換対象のツイート配列
+   * @param {string|null} twitter_username - Twitterユーザー名
+   * @returns {Promise<Array>} 変換されたポストモデルの配列
+   */
+  async transform_posts_batch_with_username(raw_posts, twitter_username = null) {
+    console.log('[transform_posts_batch_with_username] Called with:', { 
+      count: raw_posts.length, 
+      username: twitter_username 
+    })
+    
+    const transformed_posts = []
+    let valid_count = 0
+    let invalid_count = 0
+    
+    for (const raw_post of raw_posts) {
+      try {
+        const unified_data = this.transform_to_unified_schema(raw_post, twitter_username)
+        console.log('[transform_posts_batch_with_username] Unified data sample:', {
+          id: unified_data.id,
+          author: unified_data.author,
+          content_length: unified_data.content?.length
+        })
+        
+        const post_model = new PostModel(unified_data)
+        
+        // バリデーション
+        const validation = post_model.validate()
+        console.log('[transform_posts_batch_with_username] Validation result:', validation)
+        
+        if (validation.valid) {
+          transformed_posts.push(post_model)
+          valid_count++
+        } else {
+          console.warn('[transform_posts_batch_with_username] Validation failed:', validation.errors)
+          invalid_count++
+        }
+      } catch (error) {
+        console.error('[transform_posts_batch_with_username] Error transforming post:', error)
+        invalid_count++
+      }
+    }
+    
+    console.log('[transform_posts_batch_with_username] Results:', {
+      total: raw_posts.length,
+      valid: valid_count,
+      invalid: invalid_count
+    })
+    
+    return transformed_posts
   }
 
   /**
@@ -183,32 +253,111 @@ export class TwitterImporter extends BaseImporter {
    * @param {Object} raw_tweet - Twitterの生データ
    * @returns {Object} 統一スキーマのデータ
    */
-  transform_to_unified_schema(raw_tweet) {
+  transform_to_unified_schema(raw_tweet, twitter_username = null) {
+    console.log('[transform_to_unified_schema] Called with username:', twitter_username)
+    console.log('[transform_to_unified_schema] Raw tweet sample:', {
+      id: raw_tweet.id || raw_tweet.id_str,
+      has_tweet: !!raw_tweet.tweet,
+      has_retweeted_status: !!raw_tweet.retweeted_status,
+      text_preview: (raw_tweet.full_text || raw_tweet.text || '')?.substring(0, 50)
+    })
+    
     try {
       // PostModelのファクトリ関数を使用
       const post = create_post_from_raw_data('twitter', raw_tweet)
+      console.log('[transform_to_unified_schema] Post created from factory:', {
+        id: post.id,
+        author: post.author,
+        content_preview: post.content?.substring(0, 50)
+      })
       
-      // 追加の処理（必要に応じて）
-      // TwitterエクスポートにはユーザーのユーザーネームやIDが含まれていない場合があるため、
-      // インポート時に設定できるようにする
-      if (!post.author.username || post.author.username === 'unknown') {
-        // 後でユーザーが設定できるようにプレースホルダーを設定
+      // RTパターンの検出
+      const rt_pattern = /^RT @([a-zA-Z0-9_]+):/
+      const full_text = post.content || ''
+      const match = full_text.match(rt_pattern)
+      const is_manual_retweet = !!match
+      const original_author = match ? match[1] : null
+      
+      // リポスト判別（既存のretweeted_statusチェックとRTパターン検出を統合）
+      const is_repost = !!raw_tweet.retweeted_status || is_manual_retweet
+      
+      console.log('[transform_to_unified_schema] RT detection:', {
+        is_manual_retweet,
+        original_author,
+        is_repost
+      })
+      
+      // ユーザー名の設定
+      if (is_repost && original_author) {
+        // 手動RTの場合、元の投稿者名を設定
+        post.author.username = original_author
+        post.author.name = original_author // nameも同じ値に設定
+      } else if (is_repost && raw_tweet.retweeted_status) {
+        // 公式リツイートの場合
+        const rt_user = raw_tweet.retweeted_status.user
+        if (rt_user) {
+          post.author.username = rt_user.screen_name || 'twitter_user'
+          post.author.name = rt_user.name || rt_user.screen_name || 'Twitter User'
+        }
+      } else if (twitter_username) {
+        // 通常の投稿の場合、入力されたユーザー名を使用
+        post.author.username = twitter_username
+        // 自分のツイートの場合、raw_tweetにuser情報があれば使用、なければusernameを使用
+        if (raw_tweet.user?.name) {
+          post.author.name = raw_tweet.user.name
+        } else {
+          post.author.name = twitter_username // nameにもusernameと同じ値を設定
+        }
+      } else if (raw_tweet.user) {
+        // raw_tweetにuser情報がある場合はそれを使用
+        post.author.username = raw_tweet.user.screen_name || 'twitter_user'
+        post.author.name = raw_tweet.user.name || raw_tweet.user.screen_name || 'Twitter User'
+      } else if (!post.author.username || post.author.username === 'unknown') {
+        // フォールバック：ユーザー名が設定されていない場合
         post.author.username = 'twitter_user'
         post.author.name = 'Twitter User'
       }
       
-      // URLの生成（ユーザー名が不明な場合は仮のURLを生成）
+      // author.nameが未設定または「Twitter User」のままの場合、usernameを使用
+      if (!post.author.name || post.author.name === 'unknown' || post.author.name === 'Twitter User') {
+        if (post.author.username && post.author.username !== 'unknown' && post.author.username !== 'twitter_user') {
+          post.author.name = post.author.username
+        }
+      }
+      
+      console.log('[transform_to_unified_schema] Final author:', post.author)
+      
+      // is_repostフラグの更新
+      post.is_repost = is_repost
+      
+      // sns_specificに元の投稿者情報を保存（後方互換性のため）
+      if (is_repost && original_author) {
+        post.sns_specific.original_author = original_author
+      }
+      
+      // URLの生成（ユーザー名が判明している場合は正確なURLを生成）
       if (!post.original_url) {
-        post.original_url = `https://twitter.com/i/status/${raw_tweet.id_str || raw_tweet.id}`
+        if (post.author.username && post.author.username !== 'twitter_user') {
+          post.original_url = `https://twitter.com/${post.author.username}/status/${raw_tweet.id_str || raw_tweet.id}`
+        } else {
+          post.original_url = `https://twitter.com/i/status/${raw_tweet.id_str || raw_tweet.id}`
+        }
       }
       
       // サニタイズ
       post.content = security_validator.sanitize_content(post.content)
       
-      return post.to_db_object()
+      const result = post.to_db_object()
+      console.log('[transform_to_unified_schema] Final result:', {
+        id: result.id,
+        author: result.author,
+        has_content: !!result.content
+      })
+      
+      return result
       
     } catch (error) {
-
+      console.error('[transform_to_unified_schema] Error:', error)
       // 最小限の情報で返す
       return {
         id: `twitter_${raw_tweet.id_str || raw_tweet.id || Date.now()}`,
@@ -217,8 +366,8 @@ export class TwitterImporter extends BaseImporter {
         created_at: this.parse_twitter_date(raw_tweet.created_at),
         content: 'エラー: ツイートの変換に失敗しました',
         author: {
-          name: 'Twitter User',
-          username: 'twitter_user',
+          name: twitter_username || 'Twitter User',
+          username: twitter_username || 'twitter_user',
           avatar_url: null
         },
         metrics: {
@@ -234,8 +383,6 @@ export class TwitterImporter extends BaseImporter {
         hashtags: [],
         mentions: [],
         sns_specific: {},
-        is_kept: false,
-        kept_at: null,
         original_url: null,
         imported_at: new Date().toISOString(),
         version: 2

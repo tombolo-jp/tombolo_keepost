@@ -7,7 +7,7 @@ export class ExportService {
   constructor() {
     this.CHUNK_SIZE = 1000
     this.VERSION = 1
-    this.DB_VERSION = 6
+    this.DB_VERSION = 9
   }
 
   async export_all_data(progress_callback = null) {
@@ -25,7 +25,6 @@ export class ExportService {
       
       let total_items = metadata.counts.posts + 
                        metadata.counts.keep_items + 
-                       metadata.counts.sns_accounts + 
                        metadata.counts.settings
       let processed_items = 0
       
@@ -77,13 +76,11 @@ export class ExportService {
   async get_data_counts() {
     const post_count = await db.posts.count()
     const keep_count = await db.keep_items.count()
-    const sns_account_count = await db.sns_accounts.count()
     const settings_count = await db.settings.count()
     
     return {
       posts: post_count,
       keep_items: keep_count,
-      sns_accounts: sns_account_count,
       settings: settings_count
     }
   }
@@ -91,7 +88,6 @@ export class ExportService {
   async* generate_ndjson_stream(progress_callback) {
     yield* this.fetch_posts_stream()
     yield* this.fetch_keep_items_stream()
-    yield* this.fetch_sns_accounts_stream()
     yield* this.fetch_settings_stream()
   }
 
@@ -144,36 +140,6 @@ export class ExportService {
       for (const item of items) {
         yield JSON.stringify({
           type: 'keep_item',
-          data: item
-        })
-      }
-      
-      offset += this.CHUNK_SIZE
-      has_more = items.length === this.CHUNK_SIZE
-      
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-  }
-
-  async* fetch_sns_accounts_stream() {
-    const table = db.sns_accounts
-    let offset = 0
-    let has_more = true
-    
-    while (has_more) {
-      const items = await table
-        .offset(offset)
-        .limit(this.CHUNK_SIZE)
-        .toArray()
-      
-      if (items.length === 0) {
-        has_more = false
-        break
-      }
-      
-      for (const item of items) {
-        yield JSON.stringify({
-          type: 'sns_account',
           data: item
         })
       }

@@ -4,7 +4,7 @@ import { debug_log, debug_error } from '../utils/debug.js'
 
 /**
  * ポストサービス
- * ポストデータのビジネスロジックを管理
+ * 投稿データのビジネスロジックを管理
  */
 export class PostService {
   /**
@@ -32,7 +32,7 @@ export class PostService {
 
     // ポストを取得
     const posts = await post_repository.get_posts(query_options)
-    
+
     // 総数を取得
     const total_count = await post_repository.get_post_count(filter)
     const total_pages = Math.ceil(total_count / per_page)
@@ -58,12 +58,12 @@ export class PostService {
    */
   async search_posts(query, options = {}) {
     debug_log('post_service.search_posts called with:', { query, options })
-    
+
     const {
       page = 1,
       per_page = 20,
       filter = {},
-      sort = 'desc'  // ソートパラメータを追加
+      sort = 'created_desc'  // ソートパラメータを追加
     } = options
 
     // 検索サービスを使用
@@ -130,7 +130,7 @@ export class PostService {
     try {
       const total_count = await post_repository.get_post_count();
       debug_log('post_service.get_post_stats total_count:', total_count);
-      
+
       return {
         total_count: total_count || 0,  // null/undefined を 0 に変換
         language_stats: {},
@@ -266,7 +266,7 @@ export class PostService {
    */
   async save_import_history(history_item) {
     const history = await this.get_import_history()
-    
+
     history.unshift({
       ...history_item,
       imported_at: new Date().toISOString()
@@ -294,7 +294,7 @@ export class PostService {
       const BATCH_SIZE = 100
       let offset = 0
       let fixed_count = 0
-      
+
       while (true) {
         // Mastodonポストをバッチで取得
         const posts = await repository.get_posts({
@@ -302,35 +302,35 @@ export class PostService {
           limit: BATCH_SIZE,
           offset: offset
         })
-        
+
         if (!posts || posts.length === 0) break
-        
+
         // 各ポストのURLを修正
         for (const post of posts) {
           if (post.original_url) {
             let url = post.original_url
             let needs_update = false
-            
+
             // @users@domain形式の重複を除去
             if (url.includes('@users@')) {
               url = url.replace(/@users@[^\/]+\//, '')
               needs_update = true
             }
-            
+
             // https://の重複を除去
             const https_match = url.match(/(https:\/\/[^\/]+)\/(https:\/\/.+)/)
             if (https_match) {
               url = https_match[2]
               needs_update = true
             }
-            
+
             // 複数のhttps://が含まれる場合
             if (url.split('https://').length > 2) {
               const parts = url.split('https://')
               url = 'https://' + parts[parts.length - 1]
               needs_update = true
             }
-            
+
             // URLが変更された場合のみ更新
             if (needs_update) {
               post.original_url = url
@@ -339,12 +339,12 @@ export class PostService {
             }
           }
         }
-        
+
         offset += BATCH_SIZE
       }
 
       return { success: true, fixed_count }
-      
+
     } catch (error) {
 
       return { success: false, fixed_count: 0, error: error.message }

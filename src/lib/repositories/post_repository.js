@@ -3,7 +3,7 @@ import { debug_log, debug_error, debug_warn } from '../utils/debug.js';
 
 /**
  * マルチSNS対応統一ポストリポジトリ
- * Twitter/Bluesky/Mastodon等のポストデータを統一スキーマで管理
+ * Twitter/Bluesky/Mastodon等の投稿データを統一スキーマで管理
  * Dexie.jsを使用した実装
  */
 export class PostRepository {
@@ -43,7 +43,7 @@ export class PostRepository {
 
     try {
       // トランザクション内でバッチ追加
-      await db.transaction('rw', db.posts, async () => {
+      const result = await db.transaction('rw', db.posts, async () => {
         const processed_posts = posts.map(post => {
           // 日付から年月を抽出してインデックス用に追加
           const created_date = new Date(post.created_at);
@@ -52,14 +52,68 @@ export class PostRepository {
         });
 
         // バルク挿入（重複はスキップ）
-        await db.posts.bulkAdd(processed_posts).catch('ConstraintError', err => {
+        let saved_count = 0;
+        let saved_posts = [];
 
-        });
+        try {
+          saved_count = await db.posts.bulkAdd(processed_posts);
+          saved_posts = processed_posts;
+        } catch (err) {
+          if (err.name === 'BulkError') {
+            // BulkErrorの場合、成功したものだけを取得
+            console.log(`バルク挿入で一部エラー: ${err.failures.length}件失敗`);
+
+            // 成功したポストを特定
+            for (let i = 0; i < processed_posts.length; i++) {
+              if (!err.failuresByPos[i]) {
+                saved_posts.push(processed_posts[i]);
+                saved_count++;
+              }
+            }
+
+            // 失敗したものを個別に処理
+            for (let i = 0; i < processed_posts.length; i++) {
+              if (err.failuresByPos[i]) {
+                const post = processed_posts[i];
+                try {
+                  // 既存のポストがある場合はスキップ
+                  const existing = await db.posts.get(post.id);
+                  if (!existing) {
+                    await db.posts.add(post);
+                    saved_posts.push(post);
+                    saved_count++;
+                  }
+                } catch (e) {
+                  // 個別の重複もスキップ（エラーログは出さない）
+                }
+              }
+            }
+          } else if (err.name === 'ConstraintError') {
+            // 重複エラーは無視して、個別に処理
+            for (const post of processed_posts) {
+              try {
+                await db.posts.add(post);
+                saved_posts.push(post);
+                saved_count++;
+              } catch (e) {
+                // 個別の重複も無視
+              }
+            }
+          } else {
+            throw err;
+          }
+        }
+
+        // 保存されたポストを返す
+        return saved_posts;
       });
 
-    } catch (error) {
+      return result;
 
-      throw new Error('ポストの保存に失敗しました');
+    } catch (error) {
+      console.error('ポスト保存エラー:', error);
+      // エラーが発生しても、元のポストを返す（インポートを継続するため）
+      return posts;
     }
   }
 
@@ -72,12 +126,12 @@ export class PostRepository {
         .where('sns_type')
         .equals(sns_type)
         .toArray();
-      
+
       const existing_ids = new Set(existing_posts.map(p => p.original_id));
-      
+
       // 差分のみを抽出
       const new_posts = posts.filter(post => !existing_ids.has(post.original_id));
-      
+
       if (new_posts.length === 0) {
         return {
           imported: 0,
@@ -86,7 +140,7 @@ export class PostRepository {
           message: 'すべてのポストは既にインポート済みです'
         };
       }
-      
+
       // トランザクション内でバッチ追加
       await db.transaction('rw', db.posts, async () => {
         const processed_posts = new_posts.map(post => {
@@ -110,7 +164,7 @@ export class PostRepository {
       throw new Error('差分インポートに失敗しました');
     }
   }
-  
+
   // 重複キーを生成するヘルパー関数
   generate_duplicate_key(post, sns_type) {
     switch(sns_type) {
@@ -124,25 +178,25 @@ export class PostRepository {
         return `${sns_type}_${post.original_id}`;
     }
   }
-  
+
   // 既存ポストのIDセットを取得
   async get_existing_post_ids(sns_type = null) {
     await this.ensure_initialized();
-    
+
     try {
       let query = db.posts;
       if (sns_type) {
         query = query.where('sns_type').equals(sns_type);
       }
-      
+
       const posts = await query.toArray();
       const id_set = new Set();
-      
+
       posts.forEach(post => {
         const key = this.generate_duplicate_key(post, post.sns_type);
         id_set.add(key);
       });
-      
+
       return id_set;
     } catch (error) {
 
@@ -158,7 +212,7 @@ export class PostRepository {
   async get_posts(options = {}) {
     debug_log('post_repository.get_posts called with:', options);
     await this.ensure_initialized();
-    
+
     // データベースの状態を確認
     const count = await db.posts.count();
     debug_log(`post_repository: Total posts in DB: ${count}`);
@@ -166,7 +220,7 @@ export class PostRepository {
     const {
       limit = 20,
       offset = 0,
-      sort = 'desc',
+      sort = 'created_desc',  // created_desc | created_asc | kept_desc | kept_asc
       filter = {}
     } = options;
 
@@ -181,10 +235,101 @@ export class PostRepository {
       language = null,
       has_links = null
     } = filter;
-    
+
     debug_log('Filter values:', { sns_type, is_kept, year_month, has_media, language, has_links });
 
     try {
+      // KEEPフィルター専用の処理パス
+      if (is_kept === true) {
+        // keep_itemsテーブルから全件取得してフィルタリング
+        let keep_items = await db.keep_items.toArray();
+        
+        // SNS種別フィルター（メモリ上でフィルタリング）
+        if (sns_type) {
+          keep_items = keep_items.filter(item => item.sns_type === sns_type);
+        }
+        
+        // ソート処理（kept_at または created_at）
+        // まずポスト情報も一緒に取得してからソート
+        const post_ids_for_sort = keep_items.map(item => item.post_id);
+        const posts_for_sort = await db.posts.where('id').anyOf(post_ids_for_sort).toArray();
+        const posts_map_for_sort = new Map(posts_for_sort.map(p => [p.id, p]));
+
+        // keep_itemsにポスト情報を結合
+        const items_with_posts = keep_items.map(item => ({
+          ...item,
+          created_at: posts_map_for_sort.get(item.post_id)?.created_at
+        }));
+
+        // ソートタイプに応じてソート
+        items_with_posts.sort((a, b) => {
+          if (sort === 'kept_desc' || sort === 'kept_asc') {
+            // KEEP日時でソート
+            const dateA = new Date(a.kept_at);
+            const dateB = new Date(b.kept_at);
+            return sort === 'kept_desc' ? dateB - dateA : dateA - dateB;
+          } else {
+            // 投稿日時でソート
+            const dateA = new Date(a.created_at);
+            const dateB = new Date(b.created_at);
+            return sort === 'created_desc' ? dateB - dateA : dateA - dateB;
+          }
+        });
+
+        keep_items = items_with_posts;
+        
+        // ページネーション
+        const paginated_items = keep_items.slice(offset, offset + limit);
+        
+        // 対応するポストを一括取得
+        const post_ids = paginated_items.map(item => item.post_id);
+        
+        if (post_ids.length === 0) {
+          debug_log('post_repository.get_posts (KEEP filter) result: no posts');
+          return [];
+        }
+        
+        const posts = await db.posts.where('id').anyOf(post_ids).toArray();
+
+        // post_idsの順序を保持しながらpostsを並び替え
+        const posts_map = new Map(posts.map(p => [p.id, p]));
+        const sorted_posts = [];
+
+        for (const keep_item of paginated_items) {
+          const post = posts_map.get(keep_item.post_id);
+          if (post) {
+            // JavaScriptオブジェクトにkept情報を追加（DBは更新しない）
+            sorted_posts.push({
+              ...post,
+              is_kept: true,
+              kept_at: keep_item.kept_at
+            });
+          }
+        }
+
+        // 年月フィルター（KEEPデータに対して追加フィルタリング）
+        let filtered_posts = sorted_posts;
+        if (year_month) {
+          filtered_posts = filtered_posts.filter(post => post.year_month === year_month);
+        }
+
+        // メディアフィルター
+        if (has_media !== null) {
+          filtered_posts = filtered_posts.filter(post =>
+            has_media ? (post.media && post.media.length > 0) : (!post.media || post.media.length === 0)
+          );
+        }
+
+        debug_log('post_repository.get_posts (KEEP filter) result:', {
+          count: filtered_posts.length,
+          offset,
+          limit,
+          first_post: filtered_posts[0]?.id || 'no posts'
+        });
+
+        return filtered_posts;
+      }
+
       let query = db.posts;
 
       // SNS種別でフィルタリング
@@ -201,7 +346,7 @@ export class PostRepository {
       }
 
       // ソート順を適用
-      if (sort === 'desc') {
+      if (sort === 'created_desc' || sort === 'kept_desc') {
         query = query.reverse();
       }
 
@@ -210,21 +355,17 @@ export class PostRepository {
         query = query.filter(post => post.year_month === year_month);
       }
 
-      // KEEPフィルタリング
-      if (is_kept !== null) {
-        query = query.filter(post => post.is_kept === is_kept);
-      }
 
       // メディアフィルタリング
       if (has_media !== null) {
-        query = query.filter(post => 
+        query = query.filter(post =>
           has_media ? (post.media && post.media.length > 0) : (!post.media || post.media.length === 0)
         );
       }
 
       // リンクフィルタリング（削除予定だが互換性のため残す）
       if (has_links !== null) {
-        query = query.filter(post => 
+        query = query.filter(post =>
           has_links ? (post.urls && post.urls.length > 0) : (!post.urls || post.urls.length === 0)
         );
       }
@@ -240,16 +381,28 @@ export class PostRepository {
         .limit(limit)
         .toArray();
 
+      // 通常の処理パス（KEEP以外のフィルター）
+      let filtered_posts = posts;
+
+      // すべてのポストにKEEP状態を追加
+      const keep_items = await db.keep_items.toArray();
+      const kept_post_ids = new Set(keep_items.map(item => item.post_id));
+
+      const posts_with_keep_status = filtered_posts.map(post => ({
+        ...post,
+        is_kept: kept_post_ids.has(post.id)
+      }));
+
       debug_log('post_repository.get_posts result:', {
-        count: posts.length,
+        count: posts_with_keep_status.length,
         offset,
         limit,
-        first_post: posts[0]?.id || 'no posts'
+        first_post: posts_with_keep_status[0]?.id || 'no posts'
       });
 
-      return posts;
+      return posts_with_keep_status;
     } catch (error) {
-
+      debug_error('post_repository.get_posts error:', error);
       throw new Error('ポストの取得に失敗しました');
     }
   }
@@ -261,7 +414,7 @@ export class PostRepository {
    */
   async get_post_by_id(post_id) {
     await this.ensure_initialized();
-    
+
     try {
       const post = await db.posts.get(post_id);
       return post || null;
@@ -287,7 +440,25 @@ export class PostRepository {
    * @returns {Promise<Post[]>} ポストの配列
    */
   async get_kept_posts(options = {}) {
-    return this.get_posts({ ...options, is_kept: true });
+    // keep_itemsテーブルから取得
+    const keep_items = await db.keep_items.toArray();
+    const kept_post_ids = keep_items.map(item => item.post_id);
+
+    if (kept_post_ids.length === 0) {
+      return [];
+    }
+
+    // KEEPされているポストを取得
+    const posts = await db.posts.where('id').anyOf(kept_post_ids).toArray();
+
+    // KEEPの日時情報を追加
+    return posts.map(post => {
+      const keep_item = keep_items.find(item => item.post_id === post.id);
+      return {
+        ...post,
+        kept_at: keep_item ? keep_item.kept_at : null
+      };
+    });
   }
 
   /**
@@ -312,16 +483,26 @@ export class PostRepository {
         query = query.filter(post => post.year_month === filter.year_month);
       }
 
-      // KEEPフィルター
-      if (filter.is_kept !== null && filter.is_kept !== undefined) {
-        query = query.filter(post => post.is_kept === filter.is_kept);
-      }
 
       // メディアフィルター
       if (filter.has_media !== null && filter.has_media !== undefined) {
-        query = query.filter(post => 
+        query = query.filter(post =>
           filter.has_media ? (post.media && post.media.length > 0) : (!post.media || post.media.length === 0)
         );
+      }
+
+      // KEEPフィルター
+      if (filter.is_kept === true) {
+        // keep_itemsテーブルから取得
+        let keep_items = await db.keep_items.toArray();
+        
+        // SNS種別フィルターが適用されている場合は、keep_itemsもフィルタリング
+        if (filter.sns_type) {
+          keep_items = keep_items.filter(item => item.sns_type === filter.sns_type);
+        }
+        
+        const kept_post_ids = new Set(keep_items.map(item => item.post_id));
+        query = query.filter(post => kept_post_ids.has(post.id));
       }
 
       const count = await query.count();
@@ -345,7 +526,7 @@ export class PostRepository {
 
     try {
       const post = await db.posts.get(post_id);
-      
+
       if (!post) {
         throw new Error('ポストが見つかりません');
       }
@@ -366,18 +547,17 @@ export class PostRepository {
     await this.ensure_initialized();
 
     try {
-      await db.transaction('rw', db.posts, db.keep_items, db.sns_accounts, db.settings, async () => {
+      await db.transaction('rw', db.posts, db.keep_items, db.settings, async () => {
         await db.posts.clear();
         await db.keep_items.clear();
-        await db.sns_accounts.clear();
         await db.settings.clear();
       });
-      
+
       // localStorage もクリア
       if (typeof localStorage !== 'undefined') {
         localStorage.clear();
       }
-      
+
       // sessionStorage もクリア
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.clear();
@@ -386,6 +566,29 @@ export class PostRepository {
     } catch (error) {
 
       throw new Error('データのクリアに失敗しました');
+    }
+  }
+
+  /**
+   * 特定のSNSの投稿データのみを削除（KEEPデータは保持）
+   */
+  async clear_posts_by_sns(sns_type) {
+    await this.ensure_initialized();
+
+    try {
+      // Twilogも含める場合の処理
+      const sns_types = sns_type === 'twitter' ? ['twitter', 'twilog'] : [sns_type];
+
+      await db.transaction('rw', db.posts, async () => {
+        // 該当SNSの投稿を削除
+        for (const type of sns_types) {
+          await db.posts.where('sns_type').equals(type).delete();
+        }
+      });
+
+    } catch (error) {
+
+      throw new Error(`${sns_type}のデータ削除に失敗しました`);
     }
   }
 
@@ -430,15 +633,14 @@ export class PostRepository {
   async get_storage_info() {
     try {
       await this.ensure_initialized();
-      
+
       // KeePostのIndexedDBに存在するデータを確認
       const postCount = await db.posts.count();
       const keepCount = await db.keep_items.count();
       const settingsCount = await db.settings.count();
-      const accountsCount = await db.sns_accounts.count();
-      
-      const totalRecords = postCount + keepCount + settingsCount + accountsCount;
-      
+
+      const totalRecords = postCount + keepCount + settingsCount;
+
       // データが完全に0件の場合は使用容量0を返す
       if (totalRecords === 0) {
         return {
@@ -448,54 +650,48 @@ export class PostRepository {
           post_count: postCount
         };
       }
-      
+
       // 実際のデータサイズを計算
       let totalSize = 0;
-      
+
       // postsテーブルのサイズを推定（サンプリング）
       if (postCount > 0) {
         // 最大100件のサンプルを取得してサイズを推定
         const sampleSize = Math.min(100, postCount);
         const posts = await db.posts.limit(sampleSize).toArray();
         let sampleTotalSize = 0;
-        
+
         for (const post of posts) {
           // JSONに変換してバイト数を計算
           const jsonStr = JSON.stringify(post);
           sampleTotalSize += new Blob([jsonStr]).size;
         }
-        
+
         // サンプルから全体のサイズを推定
         const avgPostSize = sampleTotalSize / sampleSize;
         totalSize += avgPostSize * postCount;
       }
-      
+
       // その他のテーブルのサイズ（小さいので全件計算）
       if (keepCount > 0) {
         const keeps = await db.keep_items.toArray();
         const keepsJson = JSON.stringify(keeps);
         totalSize += new Blob([keepsJson]).size;
       }
-      
+
       if (settingsCount > 0) {
         const settings = await db.settings.toArray();
         const settingsJson = JSON.stringify(settings);
         totalSize += new Blob([settingsJson]).size;
       }
-      
-      if (accountsCount > 0) {
-        const accounts = await db.sns_accounts.toArray();
-        const accountsJson = JSON.stringify(accounts);
-        totalSize += new Blob([accountsJson]).size;
-      }
-      
+
       // navigator.storage.estimateで全体のクォータを取得
       let totalQuota = 0;
       if ('storage' in navigator && 'estimate' in navigator.storage) {
         const estimate = await navigator.storage.estimate();
         totalQuota = estimate.quota || 0;
       }
-      
+
       return {
         usage: Math.round(totalSize),
         quota: totalQuota,

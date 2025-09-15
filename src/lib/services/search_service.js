@@ -344,7 +344,16 @@ export class SearchService {
     }
 
     // sortパラメータを適切な形式に変換
-    const sort_by = sort === 'asc' ? 'date_asc' : 'date_desc'
+    let sort_by = 'date_desc'
+    if (sort === 'created_desc' || sort === 'kept_desc') {
+      sort_by = 'date_desc'
+    } else if (sort === 'created_asc' || sort === 'kept_asc') {
+      sort_by = 'date_asc'
+    } else if (sort === 'asc') {
+      sort_by = 'date_asc'
+    } else if (sort === 'desc') {
+      sort_by = 'date_desc'
+    }
     
     // 結果からポストを抽出
     const posts = results.map(r => r.item)

@@ -10,7 +10,10 @@
   let storage_info = null
   let import_history = []
   let is_loading = true
-  let show_clear_confirm = false
+  let has_twitter_data = false
+  let has_mastodon_data = false
+  let has_bluesky_data = false
+  let has_keep_data = false
 
   onMount(async () => {
     await load_data()
@@ -22,6 +25,18 @@
       await post_repository.ensure_initialized()
       storage_info = await storage_service.get_storage_info()
       import_history = await post_repository.get_setting('import_histories') || []
+
+      // 各SNSのデータ件数を取得
+      const twitter_count = await post_repository.get_post_count({ sns_type: 'twitter' })
+      const mastodon_count = await post_repository.get_post_count({ sns_type: 'mastodon' })
+      const bluesky_count = await post_repository.get_post_count({ sns_type: 'bluesky' })
+      const keep_count = storage_info.keep_count || 0
+
+      // データの存在フラグを設定
+      has_twitter_data = twitter_count > 0
+      has_mastodon_data = mastodon_count > 0
+      has_bluesky_data = bluesky_count > 0
+      has_keep_data = keep_count > 0
     } catch (error) {
 
     } finally {
@@ -45,32 +60,124 @@
     }
   }
 
-  async function handle_clear_data() {
-    if (!show_clear_confirm) {
-      show_clear_confirm = true
-      return
-    }
+  async function handle_clear_keep() {
+    const result = await Swal.fire({
+      title: 'KEEPデータを削除',
+      text: 'すべてのKEEPデータが削除されます。この操作は取り消せません。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '削除する',
+      cancelButtonText: 'キャンセル',
+      confirmButtonColor: '#e53e3e'
+    })
 
-    try {
-      await storage_service.clear_all_data()
-      ui_store.add_notification({
-        type: 'success',
-        message: 'すべてのデータを削除しました',
-        duration: 5000
-      })
-      await load_data()
-      show_clear_confirm = false
-    } catch (error) {
-      ui_store.add_notification({
-        type: 'error',
-        message: 'データの削除に失敗しました',
-        duration: 0
-      })
+    if (result.isConfirmed) {
+      try {
+        await storage_service.clear_keep_data()
+        ui_store.add_notification({
+          type: 'success',
+          message: 'KEEPデータを削除しました',
+          duration: 5000
+        })
+        await load_data()
+      } catch (error) {
+        ui_store.add_notification({
+          type: 'error',
+          message: 'KEEPデータの削除に失敗しました',
+          duration: 0
+        })
+      }
     }
   }
 
-  function cancel_clear() {
-    show_clear_confirm = false
+  async function handle_clear_twitter() {
+    const result = await Swal.fire({
+      title: 'Twitter/Twilog投稿データを削除',
+      text: 'Twitter/Twilogの投稿データが削除されます。KEEPデータは保持されます。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '削除する',
+      cancelButtonText: 'キャンセル',
+      confirmButtonColor: '#e53e3e'
+    })
+
+    if (result.isConfirmed) {
+      try {
+        await storage_service.clear_twitter_posts()
+        ui_store.add_notification({
+          type: 'success',
+          message: 'Twitter/Twilog投稿データを削除しました',
+          duration: 5000
+        })
+        await load_data()
+      } catch (error) {
+        ui_store.add_notification({
+          type: 'error',
+          message: 'Twitter/Twilog投稿データの削除に失敗しました',
+          duration: 0
+        })
+      }
+    }
+  }
+
+  async function handle_clear_mastodon() {
+    const result = await Swal.fire({
+      title: 'Mastodon投稿データを削除',
+      text: 'Mastodonの投稿データが削除されます。KEEPデータは保持されます。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '削除する',
+      cancelButtonText: 'キャンセル',
+      confirmButtonColor: '#e53e3e'
+    })
+
+    if (result.isConfirmed) {
+      try {
+        await storage_service.clear_mastodon_posts()
+        ui_store.add_notification({
+          type: 'success',
+          message: 'Mastodon投稿データを削除しました',
+          duration: 5000
+        })
+        await load_data()
+      } catch (error) {
+        ui_store.add_notification({
+          type: 'error',
+          message: 'Mastodon投稿データの削除に失敗しました',
+          duration: 0
+        })
+      }
+    }
+  }
+
+  async function handle_clear_bluesky() {
+    const result = await Swal.fire({
+      title: 'Bluesky投稿データを削除',
+      text: 'Blueskyの投稿データが削除されます。KEEPデータは保持されます。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '削除する',
+      cancelButtonText: 'キャンセル',
+      confirmButtonColor: '#e53e3e'
+    })
+
+    if (result.isConfirmed) {
+      try {
+        await storage_service.clear_bluesky_posts()
+        ui_store.add_notification({
+          type: 'success',
+          message: 'Bluesky投稿データを削除しました',
+          duration: 5000
+        })
+        await load_data()
+      } catch (error) {
+        ui_store.add_notification({
+          type: 'error',
+          message: 'Bluesky投稿データの削除に失敗しました',
+          duration: 0
+        })
+      }
+    }
   }
 
   async function handle_export() {
@@ -122,6 +229,36 @@
       })
     } catch (error) {
       console.error('Export error:', error)
+    }
+  }
+
+  async function handle_clear_all() {
+    const result = await Swal.fire({
+      title: 'KeePostの全データを削除',
+      html: '<strong>本当によろしいですか？</strong><br>削除前にデータのバックアップをおすすめします。<br>すべての投稿データ、KEEPデータ、設定が削除されます。',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '削除する',
+      cancelButtonText: 'キャンセル',
+      confirmButtonColor: '#e53e3e'
+    })
+
+    if (result.isConfirmed) {
+      try {
+        await storage_service.clear_all_data()
+        ui_store.add_notification({
+          type: 'success',
+          message: 'すべてのデータを削除しました',
+          duration: 5000
+        })
+        await load_data()
+      } catch (error) {
+        ui_store.add_notification({
+          type: 'error',
+          message: '全データの削除に失敗しました',
+          duration: 0
+        })
+      }
     }
   }
 
@@ -261,32 +398,70 @@
     </div>
 
     <div class="danger-zone">
-      <h4>危険な操作</h4>
-      {#if show_clear_confirm}
-        <div class="confirm-dialog">
-          <p>本当にすべてのデータを削除しますか？この操作は取り消せません。</p>
-          <div class="confirm-buttons">
+      <h4>データの削除</h4>
+
+      <div class="all-delete-section">
+        <button
+          class="button danger-all"
+          on:click={handle_clear_all}
+        >
+          <i class="fas fa-exclamation-triangle"></i>
+          KeePostの全データを削除
+        </button>
+        <p class="danger-note-all">
+          <i class="fas fa-exclamation-triangle"></i>
+          すべてのデータ（投稿、KEEP、設定）が完全に削除されます。事前のバックアップを強く推奨します。
+        </p>
+      </div>
+
+      <div class="divider"></div>
+
+      <h5>個別削除</h5>
+      {#if has_keep_data || has_twitter_data || has_mastodon_data || has_bluesky_data}
+        <div class="delete-buttons">
+          {#if has_keep_data}
             <button
               class="button danger"
-              on:click={handle_clear_data}
+              on:click={handle_clear_keep}
             >
-              削除する
+              <i class="fas fa-trash"></i>
+              KEEPデータを削除
             </button>
+          {/if}
+          {#if has_twitter_data}
             <button
-              class="button"
-              on:click={cancel_clear}
+              class="button danger"
+              on:click={handle_clear_twitter}
             >
-              キャンセル
+              <i class="fas fa-trash"></i>
+              Twitter/Twilog 投稿データを削除
             </button>
-          </div>
+          {/if}
+          {#if has_mastodon_data}
+            <button
+              class="button danger"
+              on:click={handle_clear_mastodon}
+            >
+              <i class="fas fa-trash"></i>
+              Mastodon 投稿データを削除
+            </button>
+          {/if}
+          {#if has_bluesky_data}
+            <button
+              class="button danger"
+              on:click={handle_clear_bluesky}
+            >
+              <i class="fas fa-trash"></i>
+              Bluesky 投稿データを削除
+            </button>
+          {/if}
         </div>
+        <p class="danger-note">
+          <i class="fas fa-info-circle"></i>
+          投稿データを削除してもKEEPデータは保持されます。再インポート時にKEEPが復活します。
+        </p>
       {:else}
-        <button
-          class="button danger"
-          on:click={handle_clear_data}
-        >
-          すべてのデータを削除
-        </button>
+        <p class="no-data">削除可能なデータがありません</p>
       {/if}
     </div>
   {/if}
@@ -298,16 +473,17 @@
     margin: 0 auto;
   }
 
-  h3 {
-    margin: 0 0 2rem;
-    color: #2d3748;
-    font-size: 1.5rem;
-  }
-
   h4 {
     margin: 0 0 1rem;
     color: #4a5568;
     font-size: 1.125rem;
+  }
+
+  h5 {
+    margin: 1rem 0 0.75rem;
+    color: #4a5568;
+    font-size: 1rem;
+    font-weight: 600;
   }
 
   .loading {
@@ -353,7 +529,8 @@
   }
 
 
-  .no-history {
+  .no-history,
+  .no-data {
     color: #718096;
     text-align: center;
     padding: 2rem 0;
@@ -426,6 +603,16 @@
     background-color: #c53030;
   }
 
+  .button.danger-all {
+    background-color: #9b2c2c;
+    width: 100%;
+    font-weight: 600;
+  }
+
+  .button.danger-all:hover {
+    background-color: #742a2a;
+  }
+
   .button.primary {
     background-color: #3182ce;
   }
@@ -455,22 +642,51 @@
     margin-right: 0.5rem;
   }
 
-  .confirm-dialog {
-    background-color: white;
-    border: 1px solid #fc8181;
-    border-radius: 4px;
-    padding: 1rem;
+  .delete-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
   }
 
-  .confirm-dialog p {
-    margin: 0 0 1rem;
-    color: #c53030;
+  .danger-note {
     font-size: 0.875rem;
+    color: #a05252;
+    margin: 1rem 0 0;
+    background-color: #fff;
+    padding: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #feb2b2;
   }
 
-  .confirm-buttons {
-    display: flex;
-    gap: 0.75rem;
+  .danger-note i {
+    margin-right: 0.5rem;
+    color: #e53e3e;
+  }
+
+  .all-delete-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .danger-note-all {
+    font-size: 0.875rem;
+    color: #742a2a;
+    margin: 0.75rem 0 0;
+    background-color: #fed7d7;
+    padding: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #fc8181;
+    font-weight: 500;
+  }
+
+  .danger-note-all i {
+    margin-right: 0.5rem;
+    color: #9b2c2c;
+  }
+
+  .divider {
+    border-top: 2px solid #feb2b2;
+    margin: 1.5rem 0;
   }
 
   @media (max-width: 640px) {
@@ -478,8 +694,8 @@
       grid-template-columns: 1fr;
     }
 
-    .confirm-buttons {
-      flex-direction: column;
+    .delete-buttons {
+      grid-template-columns: 1fr;
     }
 
     .button {

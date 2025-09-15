@@ -59,15 +59,21 @@
         margin-left: 0.5rem;
     }
 
+    .status-development {
+        background: #cbf1d0;
+        color: #097b1a;
+    }
+
     .status-planned {
         background: #e3f2fd;
         color: #1976d2;
     }
 
-    .status-development {
-        background: #cbf1d0;
-        color: #097b1a;
+    .status-consideration {
+        background: #ffecd9;
+        color: #f65e23;
     }
+
 </style>
 
 <div class="roadmap-container">
@@ -75,15 +81,6 @@
 
     <div class="section">
         <ul class="feature-list">
-            <li class="feature-item">
-                <div class="feature-title">
-                    Twilogインポート機能
-                    <span class="status-badge status-planned">計画中</span>
-                </div>
-                <div class="feature-description">
-                    Twilogからエクスポートした過去のポストを、KeePostにインポートできる機能です。
-                </div>
-            </li>
 
             <li class="feature-item">
                 <div class="feature-title">
@@ -99,6 +96,16 @@
                 <div class="feature-title">
                     ダークモード対応
                     <span class="status-badge status-planned">計画中</span>
+                </div>
+            </li>
+
+            <li class="feature-item">
+                <div class="feature-title">
+                    対応SNSの追加
+                    <span class="status-badge status-consideration">検討中</span>
+                </div>
+                <div class="feature-description">
+                    Misskey、Threadsへの対応を検討しています。
                 </div>
             </li>
 

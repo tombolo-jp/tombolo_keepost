@@ -1,10 +1,10 @@
 <script>
-  // プロップスなし、単純な表示コンポーネント
+  import { with_base_path } from '../../utils/base_path.js'
 </script>
 
 <div class="promotion-banner">
-  <a href="https://tombolo.jp/" target="_blank" rel="noopener noreferrer">
-    🚀 Webアプリ制作のご依頼は <strong>TOMBOLO</strong> へ！
+  <a href="{with_base_path('news')}">
+    🌟  Twilog インポートに対応しました！ (2025年9月14日)
   </a>
 </div>
 

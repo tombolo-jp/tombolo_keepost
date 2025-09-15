@@ -78,12 +78,26 @@ export class StorageService {
    * @param {string} sns_type - SNS種別
    * @param {File} file - インポートファイル
    * @param {Function} progress_callback - 進捗コールバック
+   * @param {string} twilog_username - Twilogインポート時のユーザー名
    * @returns {Promise<ImportResult>} インポート結果
    */
-  async import_and_save(sns_type, file, progress_callback = null) {
+  async import_and_save(sns_type, file, progress_callback = null, twilog_username = null, twitter_username = null, mastodon_account = null, bluesky_account = null) {
     try {
       // マルチSNSインポート
-      const import_result = await import_service.import_sns_data(sns_type, file, progress_callback)
+      const options = { progress_callback }
+      if (twilog_username) {
+        options.twilog_username = twilog_username
+      }
+      if (twitter_username) {
+        options.twitter_username = twitter_username
+      }
+      if (mastodon_account) {
+        options.mastodon_account = mastodon_account
+      }
+      if (bluesky_account) {
+        options.bluesky_account = bluesky_account
+      }
+      const import_result = await import_service.import_sns_data(sns_type, file, options)
 
       if (!import_result.success) {
         throw new Error(import_result.message || 'インポートに失敗しました')
@@ -149,6 +163,58 @@ export class StorageService {
     } catch (error) {
 
       throw new Error('データのクリアに失敗しました')
+    }
+  }
+
+  /**
+   * KEEPデータのみを削除
+   */
+  async clear_keep_data() {
+    try {
+      await keep_repository.clear_all_keeps()
+
+    } catch (error) {
+
+      throw new Error('KEEPデータの削除に失敗しました')
+    }
+  }
+
+  /**
+   * Twitter/Twilog投稿データのみを削除
+   */
+  async clear_twitter_posts() {
+    try {
+      await post_repository.clear_posts_by_sns('twitter')
+
+    } catch (error) {
+
+      throw new Error('Twitter/Twilog投稿データの削除に失敗しました')
+    }
+  }
+
+  /**
+   * Mastodon投稿データのみを削除
+   */
+  async clear_mastodon_posts() {
+    try {
+      await post_repository.clear_posts_by_sns('mastodon')
+
+    } catch (error) {
+
+      throw new Error('Mastodon投稿データの削除に失敗しました')
+    }
+  }
+
+  /**
+   * Bluesky投稿データのみを削除
+   */
+  async clear_bluesky_posts() {
+    try {
+      await post_repository.clear_posts_by_sns('bluesky')
+
+    } catch (error) {
+
+      throw new Error('Bluesky投稿データの削除に失敗しました')
     }
   }
 

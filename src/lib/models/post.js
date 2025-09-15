@@ -5,7 +5,7 @@
 export class PostModel {
   /**
    * コンストラクタ
-   * @param {Object} data - ポストデータ
+   * @param {Object} data - 投稿データ
    */
   constructor(data = {}) {
     // 基本情報
@@ -43,9 +43,8 @@ export class PostModel {
     // SNS固有情報
     this.sns_specific = data.sns_specific || {}
 
-    // KEEP機能
-    this.is_kept = data.is_kept || false
-    this.kept_at = data.kept_at || null
+    // リポスト判定（リツイート、ブースト、リポスト）
+    this.is_repost = data.is_repost || false
 
     // リンク情報
     this.original_url = data.original_url || null
@@ -346,8 +345,7 @@ export class PostModel {
       hashtags: this.hashtags,
       mentions: this.mentions,
       sns_specific: this.sns_specific,
-      is_kept: this.is_kept,
-      kept_at: this.kept_at,
+      is_repost: this.is_repost,
       original_url: this.original_url,
       imported_at: this.imported_at,
       version: this.version
@@ -412,44 +410,51 @@ export function create_post_from_raw_data(sns_type, raw_data) {
  * @returns {Object} 統一スキーマデータ
  */
 function transform_twitter_data(tweet) {
+  // リツイート判定
+  const is_repost = !!tweet.retweeted_status
+
+  // リツイートの場合は元のツイートのコンテンツを使用
+  const actual_tweet = tweet.retweeted_status || tweet
+
   return {
     id: `twitter_${tweet.id_str || tweet.id}`,
     original_id: tweet.id_str || tweet.id,
     sns_type: 'twitter',
     created_at: new Date(tweet.created_at).toISOString(),
-    content: tweet.full_text || tweet.text || '',
+    content: actual_tweet.full_text || actual_tweet.text || '',
+    is_repost: is_repost,
 
     author: {
-      name: tweet.user?.name || 'Twitter User',
-      username: tweet.user?.screen_name || 'unknown',
-      avatar_url: tweet.user?.profile_image_url || null
+      name: actual_tweet.user?.name || 'Twitter User',
+      username: actual_tweet.user?.screen_name || 'unknown',
+      avatar_url: actual_tweet.user?.profile_image_url || null
     },
 
     metrics: {
-      likes: tweet.favorite_count || 0,
-      shares: tweet.retweet_count || 0,
-      replies: tweet.reply_count || 0,
+      likes: actual_tweet.favorite_count || 0,
+      shares: actual_tweet.retweet_count || 0,
+      replies: actual_tweet.reply_count || 0,
       views: null
     },
 
-    language: tweet.lang || 'ja',
+    language: actual_tweet.lang || 'ja',
 
     // extended_entitiesがある場合はそちらを優先（複数画像対応）
-    media: (tweet.extended_entities?.media || tweet.entities?.media || []).map(m => ({
+    media: (actual_tweet.extended_entities?.media || actual_tweet.entities?.media || []).map(m => ({
       url: m.media_url_https || m.media_url,
       type: m.type,
       display_url: m.display_url
     })),
 
-    urls: (tweet.entities?.urls || []).map(u => ({
+    urls: (actual_tweet.entities?.urls || []).map(u => ({
       url: u.url,
       expanded_url: u.expanded_url,
       display_url: u.display_url
     })),
 
-    hashtags: (tweet.entities?.hashtags || []).map(h => h.text),
+    hashtags: (actual_tweet.entities?.hashtags || []).map(h => h.text),
 
-    mentions: (tweet.entities?.user_mentions || []).map(m => ({
+    mentions: (actual_tweet.entities?.user_mentions || []).map(m => ({
       screen_name: m.screen_name,
       name: m.name
     })),
@@ -457,7 +462,8 @@ function transform_twitter_data(tweet) {
     sns_specific: {
       reply_to_status_id: tweet.in_reply_to_status_id_str,
       quoted_status_id: tweet.quoted_status_id_str,
-      is_quote_status: tweet.is_quote_status
+      is_quote_status: tweet.is_quote_status,
+      original_author: is_repost ? actual_tweet.user?.screen_name : null
     }
   }
 }
@@ -468,13 +474,20 @@ function transform_twitter_data(tweet) {
  * @returns {Object} 統一スキーマデータ
  */
 function transform_bluesky_data(post) {
+  // リポスト判定（reason.repostを持つ場合はリポスト）
+  const is_repost = post.reason?.$type === 'app.bsky.feed.defs#reasonRepost'
+
+  // CIDを優先的にIDとして使用（CIDは投稿内容のハッシュで常に同じ）
+  const unique_id = post.cid || post.uri || `bluesky_${Date.now()}`
+
   // Bluesky AT Protocolのデータ構造に基づく変換
   return {
-    id: `bluesky_${post.uri || post.cid}`,
-    original_id: post.uri || post.cid,
+    id: `bluesky_${unique_id}`,
+    original_id: unique_id,
     sns_type: 'bluesky',
     created_at: post.indexedAt || post.createdAt,
     content: post.record?.text || post.text || '',
+    is_repost: is_repost,
 
     author: {
       name: post.author?.displayName || 'Bluesky User',
@@ -504,7 +517,9 @@ function transform_bluesky_data(post) {
     sns_specific: {
       cid: post.cid,
       uri: post.uri,
-      reply: post.record?.reply
+      rkey: post.rkey,  // rkeyも保存
+      reply: post.record?.reply,
+      original_author: is_repost && post.reason?.by ? post.reason.by.handle : null
     }
   }
 }
@@ -515,29 +530,58 @@ function transform_bluesky_data(post) {
  * @returns {Object} 統一スキーマデータ
  */
 function transform_mastodon_data(status) {
+  // ブースト判定（reblogフィールドがある場合、またはis_boostフラグがある場合）
+  const is_repost = !!status.reblog || !!status.is_boost
+
+  // ブーストの場合は元のステータスのコンテンツを使用
+  const actual_status = status.reblog || status
+
+  // 表示名とユーザー名の取得
+  let display_name = actual_status.account?.display_name ||
+                     actual_status.account?.username ||
+                     ''
+  let username = actual_status.account?.username || 'unknown'
+
+  // ブーストの場合、account情報がブースト元の情報になっているはず
+  if (is_repost && status.account) {
+    display_name = status.account.display_name || display_name
+    username = status.account.username || username
+  }
+
+  // IDの抽出（URLから数値部分のみを取得）
+  let mastodon_id = status.id
+  if (status.id && status.id.includes('statuses/')) {
+    // URLから最後のステータスID（数値）を抽出
+    const id_match = status.id.match(/statuses\/(\d+)/)
+    if (id_match) {
+      mastodon_id = id_match[1]
+    }
+  }
+
   return {
-    id: `mastodon_${status.id}`,
-    original_id: status.id,
+    id: `mastodon_${mastodon_id}`,
+    original_id: mastodon_id,
     sns_type: 'mastodon',
     created_at: status.created_at,
-    content: status.content || '',
+    content: actual_status.content || '',
+    is_repost: is_repost,
 
     author: {
-      name: status.account?.display_name || 'Mastodon User',
-      username: status.account?.username || 'unknown',
-      avatar_url: status.account?.avatar || null
+      name: display_name,  // 表示名（ブーストの場合はブースト元）
+      username: username,  // ユーザー名（ブーストの場合はブースト元）
+      avatar_url: actual_status.account?.avatar || null
     },
 
     metrics: {
-      likes: status.favourites_count || 0,
-      shares: status.reblogs_count || 0,
-      replies: status.replies_count || 0,
+      likes: actual_status.favourites_count || 0,
+      shares: actual_status.reblogs_count || 0,
+      replies: actual_status.replies_count || 0,
       views: null
     },
 
-    language: status.language || 'ja',
+    language: actual_status.language || 'ja',
 
-    media: (status.media_attachments || []).map(m => ({
+    media: (actual_status.media_attachments || []).map(m => ({
       url: m.url,
       type: m.type,
       display_url: m.preview_url
@@ -545,18 +589,25 @@ function transform_mastodon_data(status) {
 
     urls: [],  // Mastodonは本文中のリンクを別途解析する必要がある
 
-    hashtags: (status.tags || []).map(t => t.name),
+    hashtags: (actual_status.tags || []).map(t => t.name),
 
-    mentions: (status.mentions || []).map(m => ({
+    mentions: (actual_status.mentions || []).map(m => ({
       screen_name: m.username,
       name: m.username
     })),
 
     sns_specific: {
-      instance: status.account?.url?.match(/https?:\/\/([^\/]+)/)?.[1],
-      visibility: status.visibility,
-      sensitive: status.sensitive,
-      spoiler_text: status.spoiler_text
+      instance: actual_status.account?.url?.match(/https?:\/\/([^\/]+)/)?.[1],
+      visibility: actual_status.visibility,
+      sensitive: actual_status.sensitive,
+      spoiler_text: actual_status.spoiler_text,
+      original_author: is_repost ? (status.boosted_user || actual_status.account?.username) : null,
+      is_boost: is_repost,  // ブーストフラグも保存
+      boosted_url: status.boosted_url || null,
+      boosted_user: status.boosted_user || null,  // ブースト元ユーザー情報も保存
+      booster_username: status.booster_username || null,  // ブーストした人の情報
+      booster_url: status.booster_url || null,
+      original_url: status.id  // 元のURL（IDとして渡されていた値）を保存
     }
   }
 }

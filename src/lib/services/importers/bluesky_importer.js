@@ -16,7 +16,9 @@ export class BlueskyImporter extends BaseImporter {
    * @param {Function} progress_callback - 進捗コールバック
    * @returns {Promise<ImportResult>} インポート結果
    */
-  async import_data(file, filter_callback = null, progress_callback = null) {
+  async import_data(file, options = {}) {
+    const { progress_callback = null, filter_callback = null, bluesky_account = null } = options;
+
     try {
       // ファイル検証
       const validation_result = this.validate_file(file)
@@ -24,28 +26,28 @@ export class BlueskyImporter extends BaseImporter {
         throw new Error(validation_result.message)
       }
 
-      let posts_data = []
+      // CARファイルを解析
+      this.report_progress(progress_callback, {
+        step: 'parsing',
+        progress: 0,
+        message: 'CARファイルを解析しています...'
+      })
 
-      if (file.name.endsWith('.car')) {
-        // CARファイルの処理
-        posts_data = await this.import_car_file(file, progress_callback)
-      } else {
-        throw new Error('サポートされていないファイル形式です')
-      }
+      const raw_posts = await this.import_car_file(file, progress_callback, bluesky_account)
 
-      if (!posts_data || posts_data.length === 0) {
-        throw new Error('有効なポストデータが見つかりませんでした')
+      if (!raw_posts || raw_posts.length === 0) {
+        throw new Error('有効な投稿データが見つかりませんでした')
       }
 
       this.report_progress(progress_callback, {
         step: 'parsed',
         progress: 100,
-        message: `${posts_data.length.toLocaleString()}件のポストを検出しました`
+        message: `${raw_posts.length.toLocaleString()}件のポストを検出しました`
       })
 
       // バッチ処理でポストを変換
       const posts = await this.process_posts_in_batches(
-        posts_data,
+        raw_posts,
         async (batch) => {
           const transformed = await this.transform_posts_batch(batch, null)
           // フィルターコールバックがある場合は適用
@@ -66,13 +68,14 @@ export class BlueskyImporter extends BaseImporter {
     }
   }
 
+
   /**
    * CARファイルをインポート
    * @param {File} file - CARファイル
    * @param {Function} progress_callback - 進捗コールバック
-   * @returns {Promise<Array>} ポストデータの配列
+   * @returns {Promise<Array>} 投稿データの配列
    */
-  async import_car_file(file, progress_callback) {
+  async import_car_file(file, progress_callback, bluesky_account = null) {
     this.report_progress(progress_callback, {
       step: 'parsing',
       progress: 0,
@@ -96,7 +99,7 @@ export class BlueskyImporter extends BaseImporter {
 
         throw new Error('CARファイル解析ライブラリの読み込みに失敗しました。')
       }
-      
+
       // CARファイルの解析
       let reader
       try {
@@ -105,7 +108,7 @@ export class BlueskyImporter extends BaseImporter {
 
         throw new Error('CARファイル形式が正しくありません。Blueskyの最新エクスポートファイルをご使用ください。')
       }
-      
+
       const posts = []
       const roots = await reader.getRoots()
 
@@ -114,11 +117,11 @@ export class BlueskyImporter extends BaseImporter {
         progress: 20,
         message: 'CARファイルのブロックを読み込んでいます...'
       })
-      
+
       // すべてのブロックを読み込む
       const blocks = new Map()
       let block_count = 0
-      
+
       // ルートから情報を取得
       for (const root of roots) {
 
@@ -138,12 +141,12 @@ export class BlueskyImporter extends BaseImporter {
 
         }
       }
-      
+
       try {
         for await (const { cid, bytes } of reader.blocks()) {
           blocks.set(cid.toString(), bytes)
           block_count++
-          
+
           // 進捗を更新（100ブロックごと）
           if (block_count % 100 === 0) {
             this.report_progress(progress_callback, {
@@ -161,44 +164,44 @@ export class BlueskyImporter extends BaseImporter {
       this.report_progress(progress_callback, {
         step: 'parsing',
         progress: 50,
-        message: 'ポストデータを抽出しています...'
+        message: '投稿データを抽出しています...'
       })
-      
-      // CARファイルからポストデータを抽出
+
+      // CARファイルから投稿データを抽出
       let processed_count = 0
       let post_count = 0
       let profile_data = null
       let user_handle = null
       let did = null
       const post_records = []  // 全ポストレコードを格納
-      const path_to_cid = new Map()  // パス -> CIDのマッピング
-      
+      const posts_by_cid = new Map()  // CIDでポストを検索できるようにするマップ
+
       for (const [cid, bytes] of blocks) {
         processed_count++
-        
+
         try {
           // CBORデータをデコード
           const data = decode(bytes)
-          
+
           // プロフィール情報を探す（app.bsky.actor.profile）
           if (data && data.$type === 'app.bsky.actor.profile') {
             profile_data = data
             user_handle = data.handle || data.displayName
 
           }
-          
+
           // ハンドル情報の取得を試みる（#self レコードなど）
           if (data && data.handle) {
             user_handle = data.handle
 
           }
-          
+
           // repo情報からDIDを取得（CARファイルのルート構造）
           if (data && data.did) {
             did = data.did
 
           }
-          
+
           // app.bsky.feed.post タイプのレコードを探す
           if (data && data.$type === 'app.bsky.feed.post') {
             // CIDから実際のrkeyを抽出
@@ -211,16 +214,47 @@ export class BlueskyImporter extends BaseImporter {
               const hash = cid.substring(cid.length - 20, cid.length - 7)
               rkey = '3' + hash.toLowerCase().substring(0, 12)
             }
-            
+
             // レコードを保存（後でまとめて処理）
+            const post_record = {
+              cid: cid,
+              rkey: rkey,
+              data: data,
+              createdAt: data.createdAt || new Date().toISOString(),
+              type: 'post'
+            }
+            post_records.push(post_record)
+            posts_by_cid.set(cid, post_record)  // CIDマップに追加
+            post_count++
+
+            // 進捗を更新（10件ごと）
+            if (post_count % 10 === 0) {
+              this.report_progress(progress_callback, {
+                step: 'parsing',
+                progress: Math.min(70, 50 + (post_count / 10)),
+                message: `${post_count}件のポストを検出...`
+              })
+            }
+          }
+
+          // app.bsky.feed.repost タイプのレコードを探す（リポスト）
+          if (data && data.$type === 'app.bsky.feed.repost') {
+            let rkey = cid
+            if (cid.length > 13) {
+              const hash = cid.substring(cid.length - 20, cid.length - 7)
+              rkey = '3' + hash.toLowerCase().substring(0, 12)
+            }
+
+            // リポストレコードを保存
             post_records.push({
               cid: cid,
               rkey: rkey,
               data: data,
-              createdAt: data.createdAt || new Date().toISOString()
+              createdAt: data.createdAt || new Date().toISOString(),
+              type: 'repost'
             })
             post_count++
-            
+
             // 進捗を更新（10件ごと）
             if (post_count % 10 === 0) {
               this.report_progress(progress_callback, {
@@ -232,13 +266,17 @@ export class BlueskyImporter extends BaseImporter {
           }
         } catch (decode_error) {
           // デコードエラーは無視（バイナリデータなど）
-          // ポストデータ以外のブロックも含まれるため、これは正常
+          // 投稿データ以外のブロックも含まれるため、これは正常
         }
       }
-      
+
       // post_recordsをpostsに変換
+      // bluesky_accountが提供されている場合はそれを使用
+      if (bluesky_account) {
+        user_handle = bluesky_account
+      }
       // ユーザーハンドルがない場合はファイル名から推測を試みる
-      if (!user_handle && file.name) {
+      else if (!user_handle && file.name) {
         // ファイル名からハンドルを推測（例: username.bsky.social.car -> username.bsky.social）
         const name_match = file.name.match(/^([^.]+(?:\.[^.]+)*?)(?:\.car)?$/i)
         if (name_match) {
@@ -246,7 +284,7 @@ export class BlueskyImporter extends BaseImporter {
 
         }
       }
-      
+
       // DIDがない場合、ファイル名から推測を試みる
       if (!did && file.name) {
         // ファイル名にdidが含まれている場合
@@ -256,46 +294,104 @@ export class BlueskyImporter extends BaseImporter {
 
         }
       }
-      
+
       // post_recordsをpostsフォーマットに変換
-      let rkey_counter = 0
       for (const record of post_records) {
-        // BlueskyのTID形式のrkeyを生成
-        // 形式: 3 + タイムスタンプ(base32) + シーケンス番号
-        const timestamp = record.createdAt ? new Date(record.createdAt).getTime() : Date.now()
-        const tid_timestamp = Math.floor(timestamp * 1000) // マイクロ秒精度
-        const tid_clock = rkey_counter++ % 1024 // シーケンス番号（0-1023）
-        
-        // Base32エンコード用の文字セット
-        const base32chars = '234567abcdefghijklmnopqrstuvwxyz'
-        
-        // タイムスタンプとシーケンスを組み合わせてTIDを生成
-        const tid_bigint = BigInt(tid_timestamp) * 1024n + BigInt(tid_clock)
-        let tid_str = ''
-        let n = tid_bigint
-        while (n > 0n) {
-          tid_str = base32chars[Number(n % 32n)] + tid_str
-          n = n / 32n
+        // CIDから安定したrkeyを生成（CIDは投稿内容のハッシュで常に同じ）
+        // record.rkeyが既に存在する場合はそれを使用
+        let rkey = record.rkey
+        if (!rkey) {
+          // CIDから安定したrkeyを生成
+          // CIDの文字列から一意で安定した13文字のrkeyを作成
+          const cid_clean = record.cid.replace(/[^a-z0-9]/gi, '').toLowerCase()
+          if (cid_clean.length >= 12) {
+            // BlueskyのTID形式に合わせて「3」で始まる13文字
+            rkey = '3' + cid_clean.substring(0, 12)
+          } else {
+            // 短い場合はパディング
+            rkey = '3' + cid_clean.padEnd(12, '2')
+          }
         }
-        
-        // 13文字にパディング（3 + 10文字のbase32）
-        const rkey = '3' + tid_str.padStart(12, '2')
-        
+
         // DIDとrkeyからURIを構築
         const post_uri = did ? `at://${did}/app.bsky.feed.post/${rkey}` : null
-        
-        posts.push({
-          cid: record.cid,
-          uri: post_uri,
-          rkey: rkey,
-          record: record.data,
-          createdAt: record.createdAt,
-          author: {
-            handle: user_handle || 'unknown.bsky.social',
-            displayName: profile_data?.displayName || profile_data?.name || 'Bluesky User',
-            avatar: profile_data?.avatar
+
+        // リポストの場合の処理
+        if (record.type === 'repost') {
+          // 元の投稿をCIDで検索
+          let original_post = null
+          let original_text = ''
+          let original_author = 'unknown'
+          let is_own_repost = false  // 自分の投稿のリポストかどうか
+
+          if (record.data.subject) {
+            // まずCIDで元の投稿を検索
+            if (record.data.subject.cid) {
+              original_post = posts_by_cid.get(record.data.subject.cid)
+              if (original_post && original_post.data) {
+                // 元の投稿の本文を取得
+                original_text = original_post.data.text || ''
+                // 元の投稿は自分のものなので、自分のリポストとして扱う
+                is_own_repost = true
+                original_author = user_handle || 'unknown'
+              }
+            }
+
+            // 元の投稿者をURIから推測（CARファイルに元の投稿が含まれていない場合も対応）
+            if (record.data.subject.uri && !is_own_repost) {
+              // URIの形式: at://did:plc:xxxxx/app.bsky.feed.post/xxxxx
+              const uri_match = record.data.subject.uri.match(/at:\/\/(did:plc:[a-z0-9]+)\//i)
+              if (uri_match) {
+                const original_did = uri_match[1]
+                // 自分の投稿をリポストした場合
+                if (original_did === did) {
+                  original_author = user_handle || 'unknown'
+                  is_own_repost = true
+                  // 元の投稿の本文が取得できなかった場合
+                  if (!original_text) {
+                    original_text = '（投稿内容を取得できませんでした）'
+                  }
+                }
+                // 他人の投稿をリポストした場合は is_own_repost = false のまま
+              }
+            }
           }
-        })
+
+          // 自分の投稿のリポストのみ追加（他人の投稿のリポストは除外）
+          if (is_own_repost) {
+            posts.push({
+              cid: record.cid,
+              uri: post_uri,
+              rkey: rkey,
+              record: record.data,
+              createdAt: record.createdAt,
+              is_repost: true,
+              repost_subject: record.data.subject,
+              original_text: original_text,  // 元の投稿の本文
+              original_author: original_author,  // 元の投稿者
+              author: {
+                handle: user_handle || 'unknown',
+                displayName: `${user_handle || 'unknown'}`,
+                avatar: profile_data?.avatar
+              }
+            })
+          }
+        } else {
+          // 通常のポスト
+          posts.push({
+            cid: record.cid,
+            uri: post_uri,
+            rkey: rkey,
+            record: record.data,
+            createdAt: record.createdAt,
+            is_repost: false,
+            author: {
+              handle: user_handle || 'unknown',
+              displayName: `${user_handle || 'unknown'}`,
+              avatar: profile_data?.avatar
+            }
+          })
+        }
       }
 
       this.report_progress(progress_callback, {
@@ -303,18 +399,18 @@ export class BlueskyImporter extends BaseImporter {
         progress: 80,
         message: `${posts.length}件のポストを検出しました`
       })
-      
+
       // ポストが見つからない場合の詳細エラー
       if (posts.length === 0) {
 
-        throw new Error('CARファイル内に有効なポストデータが見つかりませんでした。エクスポートファイルが正しいか確認してください。')
+        throw new Error('CARファイル内に有効な投稿データが見つかりませんでした。エクスポートファイルが正しいか確認してください。')
       }
-      
+
       // メモリ安全性チェック
       await this.check_memory_safety()
-      
+
       return posts
-      
+
     } catch (error) {
 
       // エラーメッセージの改善
@@ -322,7 +418,7 @@ export class BlueskyImporter extends BaseImporter {
         throw error
       } else if (error.message.includes('形式')) {
         throw error
-      } else if (error.message.includes('ポストデータ')) {
+      } else if (error.message.includes('投稿データ')) {
         throw error
       } else {
         throw new Error(`CARファイルの解析に失敗しました: ${error.message}`)
@@ -330,62 +426,6 @@ export class BlueskyImporter extends BaseImporter {
     }
   }
 
-  /**
-   * JSONファイルをインポート
-   * @param {File} file - JSONファイル
-   * @param {Function} progress_callback - 進捗コールバック
-   * @returns {Promise<Array>} ポストデータの配列
-   */
-  async import_json_file(file, progress_callback) {
-    this.report_progress(progress_callback, {
-      step: 'parsing',
-      progress: 0,
-      message: 'JSONファイルを解析しています...'
-    })
-
-    const content = await this.read_file_content(file, progress_callback)
-
-    try {
-      const data = JSON.parse(content)
-      
-      // Blueskyのエクスポートデータ構造に基づいて解析
-      let posts = []
-      
-      // 複数の形式に対応
-      if (Array.isArray(data)) {
-        // 配列形式の場合
-        posts = data
-      } else if (data.posts) {
-        // posts プロパティがある場合
-        posts = data.posts
-      } else if (data.feed) {
-        // feed プロパティがある場合
-        posts = data.feed
-      } else {
-        // 他の可能性のある構造をチェック
-        const possible_keys = ['timeline', 'items', 'entries']
-        for (const key of possible_keys) {
-          if (data[key] && Array.isArray(data[key])) {
-            posts = data[key]
-            break
-          }
-        }
-      }
-
-      if (!Array.isArray(posts)) {
-        throw new Error('有効なポストデータが見つかりませんでした')
-      }
-
-      // メモリ安全性チェック
-      await this.check_memory_safety()
-
-      return posts
-
-    } catch (error) {
-
-      throw new Error('JSONファイルの解析に失敗しました')
-    }
-  }
 
   /**
    * Blueskyの生データを統一スキーマに変換
@@ -396,49 +436,72 @@ export class BlueskyImporter extends BaseImporter {
     try {
       // PostModelのファクトリ関数を使用
       const post = create_post_from_raw_data('bluesky', raw_post)
-      
+
+      // リポストの処理
+      if (raw_post.is_repost) {
+        post.is_repost = true
+
+        // リポストの場合、元の投稿情報を保存
+        if (raw_post.repost_subject) {
+          post.sns_specific.repost_subject = raw_post.repost_subject
+
+          // 元の投稿の本文がある場合はそれを使用
+          if (raw_post.original_text) {
+            post.content = raw_post.original_text
+          } else {
+            // 本文が取得できない場合は空または簡潔なメッセージ
+            post.content = ''
+          }
+
+          // 元の投稿者の情報がある場合は追加
+          if (raw_post.original_author && raw_post.original_author !== 'unknown') {
+            post.sns_specific.original_author = raw_post.original_author
+          }
+        }
+      }
+
       // Bluesky固有の追加処理
       // AT Protocolの構造を解析
       if (raw_post.record) {
-        // テキストコンテンツ
-        if (raw_post.record.text) {
+        // テキストコンテンツ（リポストでない場合）
+        if (!raw_post.is_repost && raw_post.record.text) {
           post.content = raw_post.record.text
         }
-        
+
         // facets（リンク、メンション、ハッシュタグ）の処理
         if (raw_post.record.facets) {
           this.process_facets(post, raw_post.record.facets)
         }
-        
+
         // 埋め込みコンテンツの処理
         if (raw_post.record.embed) {
           this.process_embed(post, raw_post.record.embed)
         }
       }
-      
+
       // CIDとURIの確実な保存
       post.sns_specific.cid = raw_post.cid || raw_post.record?.cid
       post.sns_specific.uri = raw_post.uri || raw_post.record?.uri
       post.sns_specific.rkey = raw_post.rkey  // rkeyを保存
-      
+
       // author情報の更新（CARファイルから取得した情報がある場合）
       if (raw_post.author) {
         post.author.username = raw_post.author.handle || post.author.username
         post.author.name = raw_post.author.displayName || post.author.name
         post.author.avatar_url = raw_post.author.avatar || post.author.avatar_url
       }
-      
+
       // PostModelのgenerate_url()でURLを生成するため、ここでは設定しない
       // URIはsns_specificに保存済みなので、PostModelが適切にURLを生成できる
-      
+
       return post.to_db_object()
-      
+
     } catch (error) {
 
       // 最小限の情報で返す
       return {
-        id: `bluesky_${raw_post.uri || raw_post.cid || Date.now()}`,
-        original_id: raw_post.uri || raw_post.cid || Date.now().toString(),
+        id: `bluesky_${raw_post.cid || raw_post.uri || Date.now()}`,
+        original_id: raw_post.cid || raw_post.uri || Date.now().toString(),
         sns_type: 'bluesky',
         created_at: raw_post.indexedAt || raw_post.createdAt || new Date().toISOString(),
         content: raw_post.record?.text || raw_post.text || 'エラー: ポストの変換に失敗しました',
@@ -463,8 +526,6 @@ export class BlueskyImporter extends BaseImporter {
           cid: raw_post.cid,
           uri: raw_post.uri
         },
-        is_kept: false,
-        kept_at: null,
         original_url: null,
         imported_at: new Date().toISOString(),
         version: 2
@@ -480,7 +541,7 @@ export class BlueskyImporter extends BaseImporter {
   process_facets(post, facets) {
     for (const facet of facets) {
       if (!facet.features) continue
-      
+
       for (const feature of facet.features) {
         if (feature.$type === 'app.bsky.richtext.facet#mention') {
           // メンション
@@ -557,15 +618,14 @@ export class BlueskyImporter extends BaseImporter {
     return {
       steps: [
         'Blueskyの設定から「Export My Data」を選択',
-        'エクスポート形式でJSONを選択（推奨）',
         'エクスポートをリクエスト',
         'ダウンロード完了通知を待つ',
-        'ダウンロードしたファイルを選択してインポート'
+        'ダウンロードしたCARファイルを選択してインポート'
       ],
       file_info: {
         format: '.car',
         location: 'ダウンロードフォルダ',
-        description: 'BlueskyからエクスポートしたCARファイル'
+        description: 'Blueskyからエクスポートした.carファイル'
       },
       notes: [
         'CARファイル形式のみサポートしています',
@@ -577,16 +637,16 @@ export class BlueskyImporter extends BaseImporter {
 
   /**
    * データ破損チェック
-   * @param {Object} post - チェックするポストデータ
+   * @param {Object} post - チェックする投稿データ
    * @returns {boolean} 破損していない場合true
    */
   check_data_integrity(post) {
     if (!super.check_data_integrity(post)) return false
-    
+
     // Bluesky固有のチェック
     if (!post.uri && !post.cid) return false
     if (!post.record && !post.text) return false
-    
+
     return true
   }
 }
